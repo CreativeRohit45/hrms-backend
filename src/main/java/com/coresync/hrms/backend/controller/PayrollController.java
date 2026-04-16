@@ -1,0 +1,85 @@
+// src/main/java/com/coresync/hrms/backend/controller/PayrollController.java
+package com.coresync.hrms.backend.controller;
+
+import com.coresync.hrms.backend.dto.PayslipResponse;
+import com.coresync.hrms.backend.entity.Employee;
+import com.coresync.hrms.backend.repository.EmployeeRepository;
+import com.coresync.hrms.backend.service.PayrollPersistenceService;
+import jakarta.persistence.EntityNotFoundException;
+import lombok.RequiredArgsConstructor;
+import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.prepost.PreAuthorize;
+import org.springframework.security.core.Authentication;
+import org.springframework.web.bind.annotation.*;
+
+import java.util.List;
+
+@RestController
+@RequestMapping("/api/v1/payroll")
+@RequiredArgsConstructor
+public class PayrollController {
+
+    private final PayrollPersistenceService payrollPersistenceService;
+    private final EmployeeRepository employeeRepository;
+
+    @PostMapping("/run")
+    @PreAuthorize("hasAnyRole('HR_ADMIN', 'SUPER_ADMIN')")
+    public ResponseEntity<PayslipResponse> runPayroll(
+            @RequestParam Integer employeeId,
+            @RequestParam int month,
+            @RequestParam int year,
+            Authentication authentication) {
+
+        Integer adminId = resolveId(authentication);
+        PayslipResponse response = payrollPersistenceService.runAndPersistPayroll(employeeId, month, year, adminId);
+        return ResponseEntity.ok(response);
+    }
+
+    @PostMapping("/run-bulk")
+    @PreAuthorize("hasAnyRole('HR_ADMIN', 'SUPER_ADMIN')")
+    public ResponseEntity<Void> runBulk(
+            @RequestParam int month,
+            @RequestParam int year,
+            Authentication authentication) {
+        Integer adminId = resolveId(authentication);
+        payrollPersistenceService.runBulkPayroll(month, year, adminId);
+        return ResponseEntity.ok().build();
+    }
+
+    @PostMapping("/lock")
+    @PreAuthorize("hasAnyRole('HR_ADMIN', 'SUPER_ADMIN')")
+    public ResponseEntity<Void> lock(
+            @RequestParam int month,
+            @RequestParam int year) {
+        payrollPersistenceService.lockPayroll(month, year);
+        return ResponseEntity.ok().build();
+    }
+
+    @GetMapping("/company-payroll")
+    @PreAuthorize("hasAnyRole('HR_ADMIN', 'SUPER_ADMIN')")
+    public ResponseEntity<List<PayslipResponse>> getCompanyPayroll(
+            @RequestParam int month,
+            @RequestParam int year) {
+        return ResponseEntity.ok(payrollPersistenceService.getCompanyPayroll(month, year));
+    }
+
+    @GetMapping("/my")
+    public ResponseEntity<List<PayslipResponse>> getMyHistory(Authentication authentication) {
+        Integer employeeId = resolveId(authentication);
+        return ResponseEntity.ok(payrollPersistenceService.getEmployeeHistory(employeeId));
+    }
+
+    @GetMapping("/payslip/{recordId}")
+    @PreAuthorize("hasAnyRole('HR_ADMIN', 'SUPER_ADMIN', 'EMPLOYEE')")
+    public ResponseEntity<PayslipResponse> getPayslip(@PathVariable Integer recordId) {
+        return ResponseEntity.ok(payrollPersistenceService.getPayslip(recordId));
+    }
+
+    private Integer resolveId(Authentication authentication) {
+        String identifier = authentication.getName();
+        return employeeRepository.findByEmployeeCode(identifier)
+            .or(() -> employeeRepository.findByEmail(identifier))
+            .map(Employee::getId)
+            .orElseThrow(() -> new EntityNotFoundException("Employee profile not found for identifier: " + identifier));
+    }
+}
