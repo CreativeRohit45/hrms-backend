@@ -98,8 +98,9 @@ public class LeaveController {
 
     @GetMapping("/pending")
     @PreAuthorize("hasAnyRole('DEPARTMENT_MANAGER', 'HR_ADMIN', 'SUPER_ADMIN')")
-    public ResponseEntity<List<LeaveResponse>> getPendingLeaves() {
-        return ResponseEntity.ok(leaveService.getPendingLeaves());
+    public ResponseEntity<List<LeaveResponse>> getPendingLeaves(Authentication authentication) {
+        Integer managerId = resolveId(authentication);
+        return ResponseEntity.ok(leaveService.getPendingLeaves(managerId));
     }
 
     @PutMapping("/{id}/approve")

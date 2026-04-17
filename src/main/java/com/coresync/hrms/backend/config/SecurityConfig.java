@@ -74,12 +74,18 @@ public class SecurityConfig {
                     AntPathRequestMatcher.antMatcher("/api/v1/gatepasses/**") // Match all gatepass sub-endpoints for the user
                 ).authenticated()
 
-                // 3. Managerial Approvals
+                // 3. Managerial Approvals & Retrieval
                 .requestMatchers(
+                    AntPathRequestMatcher.antMatcher(HttpMethod.GET, "/api/v1/leaves/pending"),
+                    AntPathRequestMatcher.antMatcher(HttpMethod.GET, "/api/v1/gatepasses/pending"),
+                    AntPathRequestMatcher.antMatcher(HttpMethod.GET, "/api/v1/attendance/pending-corrections"),
+                    AntPathRequestMatcher.antMatcher(HttpMethod.GET, "/api/v1/attendance/roster"),
                     AntPathRequestMatcher.antMatcher(HttpMethod.PUT, "/api/v1/gatepasses/*/approve"),
                     AntPathRequestMatcher.antMatcher(HttpMethod.PUT, "/api/v1/gatepasses/*/reject"),
                     AntPathRequestMatcher.antMatcher(HttpMethod.PUT, "/api/v1/leaves/*/approve"),
                     AntPathRequestMatcher.antMatcher(HttpMethod.PUT, "/api/v1/leaves/*/reject"),
+                    AntPathRequestMatcher.antMatcher(HttpMethod.POST, "/api/v1/gatepasses/*/approve"),
+                    AntPathRequestMatcher.antMatcher(HttpMethod.POST, "/api/v1/gatepasses/*/reject"),
                     AntPathRequestMatcher.antMatcher(HttpMethod.PUT, "/api/v1/attendance/corrections/*/approve"),
                     AntPathRequestMatcher.antMatcher(HttpMethod.PUT, "/api/v1/attendance/corrections/*/reject"),
                     AntPathRequestMatcher.antMatcher(HttpMethod.PUT, "/api/v1/attendance/*/approve-overtime")

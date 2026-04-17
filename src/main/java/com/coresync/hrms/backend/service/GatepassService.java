@@ -12,6 +12,7 @@ import com.coresync.hrms.backend.repository.AttendanceLogRepository;
 import com.coresync.hrms.backend.repository.EmployeeRepository;
 import com.coresync.hrms.backend.repository.GatepassRepository;
 import jakarta.persistence.EntityNotFoundException;
+import com.coresync.hrms.backend.enums.EmployeeRole;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -185,7 +186,15 @@ public class GatepassService {
     }
 
     @Transactional(readOnly = true)
-    public List<GatepassResponse> getPendingGatepasses() {
+    public List<GatepassResponse> getPendingGatepasses(Integer managerId) {
+        Employee manager = employeeRepository.findById(managerId)
+            .orElseThrow(() -> new EntityNotFoundException("Manager not found"));
+
+        if (manager.getRole() == EmployeeRole.DEPARTMENT_MANAGER) {
+            return gatepassRepository.findByStatusAndEmployeeDepartmentId(
+                GatepassStatus.PENDING, manager.getDepartment().getId())
+                .stream().map(this::toResponse).collect(Collectors.toList());
+        }
         return gatepassRepository.findByStatusOrderByCreatedAtDesc(GatepassStatus.PENDING).stream().map(this::toResponse).collect(Collectors.toList());
     }
 

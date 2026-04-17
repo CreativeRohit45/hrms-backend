@@ -16,7 +16,8 @@ public interface AttendanceLogRepository extends JpaRepository<AttendanceLog, Lo
     Optional<AttendanceLog> findOpenSession(@Param("employeeId") Integer employeeId);
 
     @Query("SELECT a FROM AttendanceLog a WHERE a.employee.id = :employeeId " +
-           "AND a.workDate BETWEEN :startDate AND :endDate AND a.punchOutTime IS NOT NULL")
+           "AND a.workDate BETWEEN :startDate AND :endDate " +
+           "AND (a.punchOutTime IS NOT NULL OR a.attendanceStatus NOT IN (com.coresync.hrms.backend.enums.AttendanceStatus.PRESENT, com.coresync.hrms.backend.enums.AttendanceStatus.LATE))")
     List<AttendanceLog> findClosedSessionsForPeriod(
         @Param("employeeId") Integer employeeId,
         @Param("startDate")  LocalDate startDate,
@@ -50,5 +51,19 @@ public interface AttendanceLogRepository extends JpaRepository<AttendanceLog, Lo
         @Param("deptId") Integer deptId,
         @Param("date")   LocalDate date,
         @Param("statuses") List<com.coresync.hrms.backend.enums.AttendanceStatus> statuses
+    );
+
+    @Query("SELECT a FROM AttendanceLog a WHERE a.correctionStatus = :status AND a.employee.department.id = :deptId")
+    List<AttendanceLog> findByCorrectionStatusAndEmployeeDepartmentId(
+        @Param("status") com.coresync.hrms.backend.enums.CorrectionStatus status,
+        @Param("deptId") Integer deptId
+    );
+
+    List<AttendanceLog> findByCorrectionStatus(com.coresync.hrms.backend.enums.CorrectionStatus status);
+
+    @Query("SELECT a FROM AttendanceLog a WHERE a.employee.department.id = :deptId AND a.workDate = :date")
+    List<AttendanceLog> findByEmployeeDepartmentIdAndWorkDate(
+        @Param("deptId") Integer deptId,
+        @Param("date")   LocalDate date
     );
 }

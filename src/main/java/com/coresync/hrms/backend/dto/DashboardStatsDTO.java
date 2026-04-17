@@ -21,6 +21,7 @@ public class DashboardStatsDTO {
     private long lateDays;
     private long absentDays;
     private long leaveDays;
+    private Long totalWorkedMinutes;
 
     // Current Session (for Punch In/Out button)
     private AttendanceSessionDTO currentSession;

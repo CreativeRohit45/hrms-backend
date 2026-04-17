@@ -44,4 +44,10 @@ public interface GatepassRepository extends JpaRepository<Gatepass, Integer> {
            "AND g.actualInTime IS NULL " +
            "ORDER BY g.requestedOutTime ASC")
     List<Gatepass> findActiveApprovedByEmployee(@Param("empId") Integer empId);
+
+    @Query("SELECT g FROM Gatepass g WHERE g.status = :status AND g.employee.department.id = :deptId")
+    List<Gatepass> findByStatusAndEmployeeDepartmentId(
+        @Param("status") GatepassStatus status,
+        @Param("deptId") Integer deptId
+    );
 }

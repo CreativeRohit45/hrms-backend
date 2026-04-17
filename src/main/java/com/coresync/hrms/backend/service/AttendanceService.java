@@ -13,6 +13,7 @@ import com.coresync.hrms.backend.exception.OpenSessionException;
 import com.coresync.hrms.backend.repository.AttendanceLogRepository;
 import com.coresync.hrms.backend.repository.EmployeeRepository;
 import com.coresync.hrms.backend.repository.HolidayRepository;
+import com.coresync.hrms.backend.enums.EmployeeRole;
 
 import jakarta.persistence.EntityNotFoundException;
 import lombok.RequiredArgsConstructor;
@@ -333,6 +334,14 @@ public class AttendanceService {
         log.info("Noon Cleanup complete: {} overnight session(s) auto-closed.", closedCount);
     }
 
+    public List<AttendanceLog> getLogs(Integer employeeId, LocalDate startDate, LocalDate endDate) {
+        List<AttendanceLog> logs = attendanceLogRepository.findClosedSessionsForPeriod(employeeId, startDate, endDate);
+        for (AttendanceLog logEntity : logs) {
+            autoHealLog(logEntity);
+        }
+        return logs;
+    }
+
     public List<AttendanceLog> getMyLogs(String employeeCode) {
         List<AttendanceLog> logs = attendanceLogRepository.findByEmployeeEmployeeCodeOrderByWorkDateDesc(employeeCode);
         
@@ -361,6 +370,16 @@ public class AttendanceService {
             AttendanceStatus newStatus = resolveAttendanceStatus(logEntity.getEmployee(), logEntity.getPunchInTime());
             if (newStatus != logEntity.getAttendanceStatus()) {
                 logEntity.setAttendanceStatus(newStatus);
+                changed = true;
+            }
+        }
+
+        // 2. Fix ABSENT or incorrectly categorized records to ON_LEAVE (The "Recovered Leave" sync)
+        if (logEntity.getAttendanceStatus() == AttendanceStatus.ABSENT || logEntity.getAttendanceStatus() == AttendanceStatus.HALF_DAY) {
+            boolean hasLeave = leaveRequestRepository.existsApprovedLeaveOnDate(logEntity.getEmployee().getId(), logEntity.getWorkDate());
+            if (hasLeave) {
+                logEntity.setAttendanceStatus(AttendanceStatus.ON_LEAVE);
+                logEntity.setCorrectionReason("Auto-Healed: Approved Leave prioritized over activity");
                 changed = true;
             }
         }
@@ -434,8 +453,8 @@ public class AttendanceService {
         }
 
         LocalDateTime shiftStart = date.atTime(employee.getShift().getStartTime());
-        int gracePeriodMinutes = employee.getShift().getGracePeriodMinutes();
-        LocalDateTime lateThreshold = shiftStart.plusMinutes(gracePeriodMinutes);
+        // Always enforce a 10-minute grace period from the specific employee's shift start
+        LocalDateTime lateThreshold = shiftStart.plusMinutes(10);
 
         return punchTime.isAfter(lateThreshold)
             ? AttendanceStatus.LATE
@@ -533,5 +552,29 @@ public class AttendanceService {
             .orElseThrow(() -> new EntityNotFoundException("Log not found"));
         logEntity.setIsOvertimeApproved(true);
         return attendanceLogRepository.save(logEntity);
+    }
+
+    @Transactional(readOnly = true)
+    public List<AttendanceLog> getPendingCorrections(Integer managerId) {
+        Employee manager = employeeRepository.findById(managerId)
+            .orElseThrow(() -> new EntityNotFoundException("Manager not found"));
+            
+        if (manager.getRole() == EmployeeRole.DEPARTMENT_MANAGER) {
+            return attendanceLogRepository.findByCorrectionStatusAndEmployeeDepartmentId(
+                CorrectionStatus.PENDING, manager.getDepartment().getId());
+        }
+        return attendanceLogRepository.findByCorrectionStatus(CorrectionStatus.PENDING);
+    }
+
+    @Transactional(readOnly = true)
+    public List<AttendanceLog> getDailyRoster(Integer managerId, LocalDate date) {
+        Employee manager = employeeRepository.findById(managerId)
+            .orElseThrow(() -> new EntityNotFoundException("Manager not found"));
+
+        if (manager.getRole() == EmployeeRole.DEPARTMENT_MANAGER) {
+            return attendanceLogRepository.findByEmployeeDepartmentIdAndWorkDate(
+                manager.getDepartment().getId(), date);
+        }
+        return attendanceLogRepository.findByWorkDateOrderByPunchInTimeDesc(date);
     }
 }

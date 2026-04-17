@@ -45,21 +45,38 @@ public class DashboardService {
         long present = 0;
         long late = 0;
         long leaveDays = 0;
+        long totalWorkedMinutes = 0;
         
         if (monthlyLogs != null) {
             present = monthlyLogs.stream()
                 .filter(l -> l.getAttendanceStatus() != null && 
                     (l.getAttendanceStatus().name().equals("PRESENT") || 
                      l.getAttendanceStatus().name().equals("LATE") ||
+                     l.getAttendanceStatus().name().equals("HALF_DAY") ||
                      l.getAttendanceStatus().name().equals("WEEKEND_WORK") ||
                      l.getAttendanceStatus().name().equals("HOLIDAY_WORK")))
                 .count();
             late = monthlyLogs.stream()
-                .filter(l -> l.getAttendanceStatus() != null && l.getAttendanceStatus().name().equals("LATE"))
+                .filter(l -> l.getAttendanceStatus() != null && (
+                    l.getAttendanceStatus().name().equals("LATE") ||
+                    (l.getAttendanceStatus().name().equals("HALF_DAY") && 
+                     l.getPunchInTime() != null && 
+                     l.getPunchInTime().toLocalTime().isAfter(l.getShift().getStartTime().plusMinutes(10)))
+                ))
                 .count();
             leaveDays = monthlyLogs.stream()
                 .filter(l -> l.getAttendanceStatus() != null && l.getAttendanceStatus().name().equals("ON_LEAVE"))
                 .count();
+            
+            totalWorkedMinutes = monthlyLogs.stream()
+                .filter(l -> l.getAttendanceStatus() != null && 
+                    (l.getAttendanceStatus().name().equals("PRESENT") || 
+                     l.getAttendanceStatus().name().equals("LATE") ||
+                     l.getAttendanceStatus().name().equals("HALF_DAY") ||
+                     l.getAttendanceStatus().name().equals("WEEKEND_WORK") ||
+                     l.getAttendanceStatus().name().equals("HOLIDAY_WORK")))
+                .mapToLong(l -> l.getCalculatedPayableMinutes() != null ? l.getCalculatedPayableMinutes() : 0)
+                .sum();
         }
 
         // Get all holidays for the current month to subtract from working days
@@ -178,6 +195,7 @@ public class DashboardService {
             .lateDays(late)
             .absentDays(absent)
             .leaveDays(leaveDays)
+            .totalWorkedMinutes(totalWorkedMinutes)
             .currentSession(sessionDTO)
             .todayCompleted(todayCompleted)
             .todayTotalMinutes(todayTotalMinutes)

@@ -82,8 +82,9 @@ public class GatepassController {
 
     @GetMapping("/pending")
     @PreAuthorize("hasAnyRole('DEPARTMENT_MANAGER', 'HR_ADMIN', 'SUPER_ADMIN')")
-    public ResponseEntity<List<GatepassResponse>> getPending() {
-        return ResponseEntity.ok(gatepassService.getPendingGatepasses());
+    public ResponseEntity<List<GatepassResponse>> getPending(Principal principal) {
+        Employee manager = getEmployee(principal.getName());
+        return ResponseEntity.ok(gatepassService.getPendingGatepasses(manager.getId()));
     }
 
     private Employee getEmployee(String identifier) {

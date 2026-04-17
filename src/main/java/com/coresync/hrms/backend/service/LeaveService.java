@@ -7,6 +7,7 @@ import com.coresync.hrms.backend.enums.LeaveTransactionType;
 import com.coresync.hrms.backend.exception.InsufficientBalanceException;
 import com.coresync.hrms.backend.repository.*;
 import jakarta.persistence.EntityNotFoundException;
+import com.coresync.hrms.backend.enums.EmployeeRole;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -405,11 +406,8 @@ public class LeaveService {
         if (employee.getDepartment() == null) return Collections.emptyList();
 
         LocalDate today = LocalDate.now();
-        LocalDate weekStart = today.with(java.time.DayOfWeek.MONDAY);
-        LocalDate weekEnd = today.with(java.time.DayOfWeek.SUNDAY);
-
         return leaveRequestRepository.findApprovedLeavesForDepartmentInRange(
-                employee.getDepartment().getId(), employeeId, weekStart, weekEnd)
+                employee.getDepartment().getId(), employeeId, today, today)
             .stream().map(l -> TeamAvailabilityDTO.builder()
                 .employeeCode(l.getEmployee().getEmployeeCode())
                 .fullName(l.getEmployee().getFullName())
@@ -486,7 +484,15 @@ public class LeaveService {
     }
 
     @Transactional(readOnly = true)
-    public List<LeaveResponse> getPendingLeaves() {
+    public List<LeaveResponse> getPendingLeaves(Integer managerId) {
+        Employee manager = employeeRepository.findById(managerId)
+            .orElseThrow(() -> new EntityNotFoundException("Manager not found"));
+            
+        if (manager.getRole() == EmployeeRole.DEPARTMENT_MANAGER) {
+            return leaveRequestRepository.findByStatusAndEmployeeDepartmentId(
+                LeaveStatus.PENDING, manager.getDepartment().getId())
+                .stream().map(this::toResponse).toList();
+        }
         return leaveRequestRepository.findByStatusOrderByCreatedAtDesc(LeaveStatus.PENDING)
             .stream().map(this::toResponse).toList();
     }
