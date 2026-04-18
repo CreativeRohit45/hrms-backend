@@ -1,0 +1,305 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org" lang="en">
+<head>
+    <meta charset="UTF-8"/>
+    <title>Payslip</title>
+    <style>
+        @page {
+            size: A4;
+            margin: 20mm;
+        }
+
+        body {
+            font-family: Helvetica, Arial, sans-serif;
+            font-size: 10pt;
+            color: #334155;
+            line-height: 1.5;
+            margin: 0;
+            padding: 0;
+        }
+
+        .header {
+            width: 100%;
+            border-bottom: 2px solid #0f172a;
+            padding-bottom: 10px;
+            margin-bottom: 20px;
+        }
+
+        .header table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+
+        .header td {
+            vertical-align: middle;
+        }
+
+        .company-logo {
+            max-height: 50px;
+        }
+
+        .company-name {
+            font-size: 18pt;
+            font-weight: bold;
+            color: #0f172a;
+            margin: 0;
+        }
+
+        .document-title {
+            text-align: right;
+            font-size: 16pt;
+            font-weight: bold;
+            color: #475569;
+            text-transform: uppercase;
+            margin: 0;
+        }
+
+        .period {
+            text-align: right;
+            font-size: 11pt;
+            color: #64748b;
+            margin-top: 5px;
+        }
+
+        .section-title {
+            background-color: #f1f5f9;
+            color: #0f172a;
+            font-weight: bold;
+            padding: 8px 12px;
+            margin: 20px 0 10px 0;
+            border-left: 4px solid #3b82f6;
+            font-size: 11pt;
+        }
+
+        .info-grid {
+            width: 100%;
+            border-collapse: collapse;
+            margin-bottom: 15px;
+        }
+
+        .info-grid td {
+            padding: 6px 12px;
+            border: 1px solid #e2e8f0;
+        }
+
+        .info-grid .label {
+            background-color: #f8fafc;
+            font-weight: bold;
+            color: #475569;
+            width: 25%;
+        }
+
+        .financial-table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-bottom: 20px;
+        }
+
+        .financial-table th {
+            background-color: #0f172a;
+            color: #ffffff;
+            font-weight: bold;
+            padding: 10px 12px;
+            text-align: left;
+            border: 1px solid #0f172a;
+        }
+
+        .financial-table td {
+            padding: 8px 12px;
+            border: 1px solid #e2e8f0;
+        }
+
+        .financial-table .amount {
+            text-align: right;
+            font-family: Consolas, monospace;
+        }
+
+        .totals-row td {
+            background-color: #f1f5f9;
+            font-weight: bold;
+            color: #0f172a;
+            border-top: 2px solid #94a3b8;
+        }
+
+        .net-pay-box {
+            width: 100%;
+            margin-top: 20px;
+            border-collapse: collapse;
+        }
+
+        .net-pay-box td {
+            padding: 15px;
+            border: 2px solid #0f172a;
+            background-color: #f8fafc;
+        }
+
+        .net-pay-label {
+            font-size: 14pt;
+            font-weight: bold;
+            color: #0f172a;
+        }
+
+        .net-pay-amount {
+            font-size: 18pt;
+            font-weight: bold;
+            color: #10b981;
+            text-align: right;
+        }
+
+        .footer {
+            margin-top: 40px;
+            text-align: center;
+            font-size: 8pt;
+            color: #94a3b8;
+            border-top: 1px solid #e2e8f0;
+            padding-top: 10px;
+        }
+    </style>
+</head>
+<body>
+
+    <div class="header">
+        <table>
+            <tr>
+                <td style="width: 60%;">
+                    <div th:if="${companyLogo != null and companyLogo != ''}">
+                        <img th:src="'data:image/png;base64,' + ${companyLogo}" class="company-logo" alt="Company Logo" />
+                    </div>
+                    <div th:if="${companyLogo == null or companyLogo == ''}">
+                        <h1 class="company-name" th:text="${companyName ?: 'Company Name'}">Company Name</h1>
+                    </div>
+                </td>
+                <td style="width: 40%; vertical-align: top;">
+                    <h2 class="document-title">Payslip</h2>
+                    <div class="period" th:text="${payslip.period}">January 2026</div>
+                </td>
+            </tr>
+        </table>
+    </div>
+
+    <div class="section-title">Employee Details</div>
+    <table class="info-grid">
+        <tr>
+            <td class="label">Employee ID</td>
+            <td th:text="${payslip.employeeCode}">EMP-000</td>
+            <td class="label">Department</td>
+            <td th:text="${payslip.departmentName}">Engineering</td>
+        </tr>
+        <tr>
+            <td class="label">Employee Name</td>
+            <td th:text="${payslip.fullName}">John Doe</td>
+            <td class="label">Designation</td>
+            <td th:text="${payslip.designation}">Software Engineer</td>
+        </tr>
+    </table>
+
+    <div class="section-title">Attendance &amp; Hours</div>
+    <table class="info-grid">
+        <tr>
+            <td class="label">Present Days</td>
+            <td th:text="${payslip.presentDays}">0</td>
+            <td class="label">Absent Days</td>
+            <td th:text="${payslip.absentDays}">0</td>
+        </tr>
+        <tr>
+            <td class="label">Late Days</td>
+            <td th:text="${payslip.lateDays}">0</td>
+            <td class="label">Leave / LWP Days</td>
+            <td th:text="${payslip.leaveDays}">0</td>
+        </tr>
+        <tr>
+            <td class="label">Total Payable Hours</td>
+            <!-- Custom Thymeleaf formatting for hours:minutes -->
+            <td th:text="${payslip.totalPayableMinutes / 60} + 'h ' + ${payslip.totalPayableMinutes % 60} + 'm'">0h 0m</td>
+            <td class="label">Total Overtime Hours</td>
+            <td th:text="${payslip.totalOvertimeMinutes / 60} + 'h ' + ${payslip.totalOvertimeMinutes % 60} + 'm'">0h 0m</td>
+        </tr>
+    </table>
+
+    <table style="width: 100%; border-collapse: collapse; margin-top: 20px;">
+        <tr>
+            <!-- Earnings Column -->
+            <td style="width: 48%; vertical-align: top;">
+                <table class="financial-table">
+                    <tr>
+                        <th>Earnings</th>
+                        <th class="amount">Amount (INR)</th>
+                    </tr>
+                    <tr>
+                        <td>Gross Pay (Base + Allowances)</td>
+                        <td class="amount" th:text="${#numbers.formatDecimal(payslip.grossPay, 1, 'COMMA', 2, 'POINT')}">0.00</td>
+                    </tr>
+                    <tr>
+                        <td>Overtime Pay</td>
+                        <td class="amount" th:text="${#numbers.formatDecimal(payslip.overtimePay, 1, 'COMMA', 2, 'POINT')}">0.00</td>
+                    </tr>
+                    <!-- Add more dynamic allowance rows here if needed in the future -->
+                    <tr style="height: 60px;"> <!-- Spacer to align with deductions if it has more rows -->
+                        <td></td>
+                        <td></td>
+                    </tr>
+                    <tr class="totals-row">
+                        <td>Total Earnings (A)</td>
+                        <td class="amount" th:text="${#numbers.formatDecimal(payslip.grossPay + payslip.overtimePay, 1, 'COMMA', 2, 'POINT')}">0.00</td>
+                    </tr>
+                </table>
+            </td>
+            
+            <td style="width: 4%;"></td> <!-- Spacer -->
+
+            <!-- Deductions Column -->
+            <td style="width: 48%; vertical-align: top;">
+                <table class="financial-table">
+                    <tr>
+                        <th>Deductions</th>
+                        <th class="amount">Amount (INR)</th>
+                    </tr>
+                    <tr>
+                        <td>Provident Fund (PF)</td>
+                        <td class="amount" th:text="${#numbers.formatDecimal(payslip.deductionPf, 1, 'COMMA', 2, 'POINT')}">0.00</td>
+                    </tr>
+                    <tr>
+                        <td>ESI</td>
+                        <td class="amount" th:text="${#numbers.formatDecimal(payslip.deductionEsi, 1, 'COMMA', 2, 'POINT')}">0.00</td>
+                    </tr>
+                    <tr>
+                        <td>TDS</td>
+                        <td class="amount" th:text="${#numbers.formatDecimal(payslip.deductionTds, 1, 'COMMA', 2, 'POINT')}">0.00</td>
+                    </tr>
+                    <tr>
+                        <td>Salary Advance</td>
+                        <td class="amount" th:text="${#numbers.formatDecimal(payslip.deductionAdvance, 1, 'COMMA', 2, 'POINT')}">0.00</td>
+                    </tr>
+                    <tr>
+                        <td>Other Deductions (LWP / Shortfall)</td>
+                        <td class="amount" th:text="${#numbers.formatDecimal(payslip.deductionOther, 1, 'COMMA', 2, 'POINT')}">0.00</td>
+                    </tr>
+                    <tr class="totals-row">
+                        <td>Total Deductions (B)</td>
+                        <td class="amount" th:text="${#numbers.formatDecimal(payslip.totalDeductions, 1, 'COMMA', 2, 'POINT')}">0.00</td>
+                    </tr>
+                </table>
+            </td>
+        </tr>
+    </table>
+
+    <table class="net-pay-box">
+        <tr>
+            <td>
+                <span class="net-pay-label">Net Pay (A - B)</span><br/>
+                <span style="font-size: 9pt; color: #64748b; font-weight: normal;">Amount transferred to bank account</span>
+            </td>
+            <td class="net-pay-amount">
+                ₹ <span th:text="${#numbers.formatDecimal(payslip.netPay, 1, 'COMMA', 2, 'POINT')}">0.00</span>
+            </td>
+        </tr>
+    </table>
+
+    <div class="footer">
+        This is a computer-generated document. No signature is required.<br/>
+        Generated on <span th:text="${#temporals.format(payslip.processedAt, 'dd MMM yyyy HH:mm')}">Date</span>.
+        Status: <strong th:text="${payslip.status}">PROCESSED</strong>.
+    </div>
+
+</body>
+</html>

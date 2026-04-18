@@ -223,13 +223,20 @@ public class PayrollPersistenceService {
             .presentDays(record.getPresentDays())
             .absentDays(record.getAbsentDays())
             .leaveDays(record.getLeaveDays())
+            .lateDays(record.getLateDays())
+            .totalPayableMinutes(record.getTotalPayableMinutes())
+            .totalOvertimeMinutes(record.getTotalOvertimeMinutes())
             .grossPay(record.getGrossPay())
+            .overtimePay(record.getOvertimePay())
             .deductionPf(record.getDeductionPf())
             .deductionEsi(record.getDeductionEsi())
             .deductionTds(record.getDeductionTds())
+            .deductionAdvance(record.getDeductionAdvance())
+            .deductionOther(record.getDeductionOther())
             .totalDeductions(record.getTotalDeductions())
             .netPay(record.getNetPay())
             .status(record.getStatus().name())
+            .processedAt(record.getProcessedAt())
             .build();
     }
 }

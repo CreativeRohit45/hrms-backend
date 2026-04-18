@@ -19,7 +19,20 @@ public class SystemService {
         Map<String, Object> info = new HashMap<>();
         info.put("serverTime", LocalDateTime.now());
         info.put("payrollLockDate", getPayrollLockDate());
+        info.put("companyName", getCompanyName());
         return info;
+    }
+
+    public String getCompanyName() {
+        return systemSettingsRepository.findBySettingKey("COMPANY_NAME")
+            .map(SystemSettings::getSettingValue)
+            .orElse("CoreSync Technologies");
+    }
+
+    public String getCompanyLogoBase64() {
+        return systemSettingsRepository.findBySettingKey("COMPANY_LOGO_BASE64")
+            .map(SystemSettings::getSettingValueLarge)
+            .orElse(null);
     }
 
     public LocalDate getPayrollLockDate() {

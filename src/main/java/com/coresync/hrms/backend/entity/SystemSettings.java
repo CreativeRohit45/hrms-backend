@@ -15,8 +15,13 @@ public class SystemSettings {
     @Column(name = "setting_key", nullable = false, unique = true, length = 100)
     private String settingKey;
 
-    @Column(name = "setting_value", nullable = false, length = 255)
+    @Column(name = "setting_value", length = 255)
     private String settingValue;
+
+    /** Large values (e.g. Base64 logos) that exceed 255 chars */
+    @Lob
+    @Column(name = "setting_value_large", columnDefinition = "MEDIUMTEXT")
+    private String settingValueLarge;
 
     @Column(name = "description")
     private String description;

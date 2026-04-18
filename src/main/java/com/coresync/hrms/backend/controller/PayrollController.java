@@ -6,8 +6,11 @@ import com.coresync.hrms.backend.dto.PayslipResponse;
 import com.coresync.hrms.backend.entity.Employee;
 import com.coresync.hrms.backend.repository.EmployeeRepository;
 import com.coresync.hrms.backend.service.PayrollPersistenceService;
+import com.coresync.hrms.backend.service.PdfService;
 import jakarta.persistence.EntityNotFoundException;
 import lombok.RequiredArgsConstructor;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.Authentication;
@@ -21,6 +24,7 @@ import java.util.List;
 public class PayrollController {
 
     private final PayrollPersistenceService payrollPersistenceService;
+    private final PdfService pdfService;
     private final EmployeeRepository employeeRepository;
 
     @PostMapping("/run")
@@ -74,6 +78,20 @@ public class PayrollController {
     @PreAuthorize("hasAnyRole('HR_ADMIN', 'SUPER_ADMIN', 'EMPLOYEE')")
     public ResponseEntity<PayslipResponse> getPayslip(@PathVariable Integer recordId) {
         return ResponseEntity.ok(payrollPersistenceService.getPayslip(recordId));
+    }
+
+    @GetMapping("/payslip/{recordId}/download")
+    @PreAuthorize("hasAnyRole('HR_ADMIN', 'SUPER_ADMIN', 'EMPLOYEE')")
+    public ResponseEntity<byte[]> downloadPayslipPdf(@PathVariable Integer recordId) {
+        PayslipResponse payslip = payrollPersistenceService.getPayslip(recordId);
+        byte[] pdfBytes = pdfService.generatePayslipPdf(payslip);
+
+        String filename = String.format("Payslip_%s_%s.pdf", payslip.getEmployeeCode(), payslip.getPeriod().replace(" ", "_"));
+
+        return ResponseEntity.ok()
+            .header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=\"" + filename + "\"")
+            .contentType(MediaType.APPLICATION_PDF)
+            .body(pdfBytes);
     }
 
     private Integer resolveId(Authentication authentication) {

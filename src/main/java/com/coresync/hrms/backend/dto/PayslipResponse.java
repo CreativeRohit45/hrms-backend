@@ -18,13 +18,22 @@ public class PayslipResponse {
     private int presentDays;
     private int absentDays;
     private int leaveDays;
+    private int lateDays;
+    
+    private int totalPayableMinutes;
+    private int totalOvertimeMinutes;
     
     private BigDecimal grossPay;
+    private BigDecimal overtimePay;
+    
     private BigDecimal deductionPf;
     private BigDecimal deductionEsi;
     private BigDecimal deductionTds;
+    private BigDecimal deductionAdvance;
+    private BigDecimal deductionOther;
     private BigDecimal totalDeductions;
     private BigDecimal netPay;
     
     private String status;
+    private java.time.LocalDateTime processedAt;
 }
