@@ -38,24 +38,26 @@ public class GatepassService {
         
         // --- NIGHT SHIFT AWARE VALIDATION ---
         java.time.LocalDateTime effectiveInTime = request.getRequestedInTime();
+        java.time.LocalDateTime effectiveOutTime = request.getRequestedOutTime();
+        
         com.coresync.hrms.backend.entity.Shift shift = employee.getShift();
         
-        // If return time is numerically before out time on the same date,
+        // If return time is numerically before out time on the same date (IN LOCAL TIME),
         // it implies crossing midnight for an overnight shift.
-        if (effectiveInTime.toLocalTime().isBefore(request.getRequestedOutTime().toLocalTime())) {
+        if (effectiveInTime.toLocalTime().isBefore(effectiveOutTime.toLocalTime())) {
             if (shift.isOvernight() || shift.getEndTime().isBefore(shift.getStartTime())) {
                 // Return time is likely on the next day
                 effectiveInTime = effectiveInTime.plusDays(1);
             }
         }
 
-        if (!request.getRequestedOutTime().isBefore(effectiveInTime)) {
+        if (!effectiveOutTime.isBefore(effectiveInTime)) {
             throw new IllegalArgumentException("Expected return time must be after out time.");
         }
 
         // --- OVERLAP GUARD ---
         List<Gatepass> overlaps = gatepassRepository.findOverlappingRequests(
-            employeeId, request.getRequestedOutTime(), request.getRequestedInTime());
+            employeeId, effectiveOutTime, effectiveInTime);
         if (!overlaps.isEmpty()) {
             throw new IllegalStateException("You already have an active or pending gatepass request that overlaps with this time slot.");
         }
@@ -63,8 +65,8 @@ public class GatepassService {
         Gatepass gatepass = Gatepass.builder()
             .employee(employee)
             .requestDate(LocalDate.now())
-            .requestedOutTime(request.getRequestedOutTime())
-            .outTime(request.getRequestedOutTime())
+            .requestedOutTime(effectiveOutTime)
+            .outTime(effectiveOutTime)
             .requestedInTime(effectiveInTime)
             .expectedInTime(effectiveInTime)
             .gatepassType(request.getGatepassType())
@@ -192,8 +194,7 @@ public class GatepassService {
 
         if (manager.getRole() == EmployeeRole.DEPARTMENT_MANAGER) {
             return gatepassRepository.findByStatusAndEmployeeDepartmentId(
-                GatepassStatus.PENDING, manager.getDepartment().getId())
-                .stream().map(this::toResponse).collect(Collectors.toList());
+                GatepassStatus.PENDING, manager.getDepartment().getId()).stream().map(this::toResponse).collect(Collectors.toList());
         }
         return gatepassRepository.findByStatusOrderByCreatedAtDesc(GatepassStatus.PENDING).stream().map(this::toResponse).collect(Collectors.toList());
     }
@@ -238,4 +239,5 @@ public class GatepassService {
             .createdAt(g.getCreatedAt())
             .build();
     }
+
 }

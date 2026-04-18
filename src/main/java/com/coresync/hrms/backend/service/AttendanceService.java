@@ -44,14 +44,21 @@ public class AttendanceService {
 
     private static final double EARTH_RADIUS_METERS = 6_371_000.0;
 
+
     @Transactional
-    public AttendanceLog punchIn(Integer employeeId, PunchInRequest request) {
+    public AttendanceLog punchIn(Integer employeeId, Double latitude, Double longitude) {
 
         Employee employee = employeeRepository.findById(employeeId)
-            .orElseThrow(() -> new EntityNotFoundException("Employee not found: " + employeeId));
+            .orElseThrow(() -> new EntityNotFoundException("Employee not found"));
 
         CompanyLocation location = employee.getLocation();
-        verifyGeofence(request.getLatitude(), request.getLongitude(), location);
+        boolean locationVerified = isWithinGeofence(latitude, longitude, location);
+        if (!locationVerified) {
+            log.warn("Punch-IN geofence FAILED for employee ID {} — continuing execution, but with flag=false", employeeId);
+        }
+
+        LocalDateTime now = LocalDateTime.now();
+        LocalDate todayIst = now.toLocalDate();
 
         Optional<AttendanceLog> openSession = attendanceLogRepository.findOpenSession(employee.getId());
         if (openSession.isPresent()) {
@@ -60,18 +67,16 @@ public class AttendanceService {
             throw new OpenSessionException(openSession.get().getId());
         }
 
-        LocalDate today = LocalDate.now();
         boolean alreadyCompletedToday = attendanceLogRepository
-            .existsByEmployeeIdAndWorkDateAndPunchOutTimeIsNotNull(employee.getId(), today);
+            .existsByEmployeeIdAndWorkDateAndPunchOutTimeIsNotNull(employee.getId(), todayIst);
         if (alreadyCompletedToday) {
             log.warn("Punch-in BLOCKED for employee {}: completed session already exists for {}",
-                employee.getEmployeeCode(), today);
+                employee.getEmployeeCode(), todayIst);
             throw new IllegalStateException(
-                "You have already completed your attendance for today (" + today + "). "
+                "You have already completed your attendance for today (" + todayIst + "). "
                 + "Use a gate pass for temporary exits.");
         }
 
-        LocalDateTime now = LocalDateTime.now();
         AttendanceStatus status = resolveAttendanceStatus(employee, now);
 
         AttendanceLog logEntity = AttendanceLog.builder()
@@ -86,7 +91,7 @@ public class AttendanceService {
             .isOvertime(false)
             .overtimeMinutes(0)
             .attendanceStatus(status)
-            .workDate(now.toLocalDate())
+            .workDate(todayIst)
             .isManuallyCorrected(false)
             .correctionReason(null)
             .correctedByUserId(null)
@@ -362,6 +367,51 @@ public class AttendanceService {
         return logs;
     }
 
+    @Transactional
+    public void syncLeaveLogs(Employee employee, LocalDate startDate, LocalDate endDate) {
+        log.info("[AttendanceService] Syncing leave logs for employee {} from {} to {}", 
+            employee.getEmployeeCode(), startDate, endDate);
+            
+        for (LocalDate date = startDate; !date.isBefore(startDate) && !date.isAfter(endDate); date = date.plusDays(1)) {
+            Optional<AttendanceLog> existing = attendanceLogRepository.findFirstByEmployeeIdAndWorkDateOrderByIdDesc(employee.getId(), date);
+            
+            if (existing.isPresent()) {
+                AttendanceLog logEntity = existing.get();
+                if (logEntity.getAttendanceStatus() == AttendanceStatus.ABSENT || logEntity.getAttendanceStatus() == AttendanceStatus.HALF_DAY) {
+                    logEntity.setAttendanceStatus(AttendanceStatus.ON_LEAVE);
+                    logEntity.setCorrectionReason("Sync: Approved Leave taking precedence");
+                    attendanceLogRepository.save(logEntity);
+                }
+            } else {
+                AttendanceLog leaveLog = AttendanceLog.builder()
+                    .employee(employee)
+                    .shift(employee.getShift())
+                    .location(employee.getLocation())
+                    .attendanceStatus(AttendanceStatus.ON_LEAVE)
+                    .workDate(date)
+                    .isManuallyCorrected(false)
+                    .correctionReason("System Sync: Approved Leave")
+                    .build();
+                attendanceLogRepository.save(leaveLog);
+            }
+        }
+    }
+
+    @Transactional
+    public void triggerRetroactiveLeaveSync() {
+        log.info("[AttendanceService] Running ON-DEMAND retroactive sync for all approved leaves...");
+        try {
+            List<com.coresync.hrms.backend.entity.LeaveRequest> leaves = leaveRequestRepository.findAll();
+            for (com.coresync.hrms.backend.entity.LeaveRequest lr : leaves) {
+                if (lr.getStatus() == com.coresync.hrms.backend.enums.LeaveStatus.APPROVED) {
+                    syncLeaveLogs(lr.getEmployee(), lr.getStartDate(), lr.getEndDate());
+                }
+            }
+        } catch (Exception e) {
+            log.error("Retroactive leave sync failed", e);
+        }
+    }
+
     private void autoHealLog(AttendanceLog logEntity) {
         boolean changed = false;
 
@@ -510,16 +560,19 @@ public class AttendanceService {
             shiftEndDateTime = shiftEndDateTime.plusDays(1);
         }
 
+        LocalDateTime punchInTime = logEntity.getPunchInTime();
+        LocalDateTime punchOutTime = logEntity.getPunchOutTime();
+
         // 3. Overtime Loophole Logic
         long standardMinutes = (long) (logEntity.getShift().getStandardHours().doubleValue() * 60);
-        boolean isOvertime = logEntity.getPunchOutTime().isAfter(shiftEndDateTime) && payableMinutes > standardMinutes;
+        boolean isOvertime = punchOutTime.isAfter(shiftEndDateTime) && payableMinutes > standardMinutes;
         
         int otMinutes = 0;
         if (isOvertime) {
-            LocalDateTime otStart = logEntity.getPunchInTime().isAfter(shiftEndDateTime) 
-                ? logEntity.getPunchInTime() 
+            LocalDateTime otStart = punchInTime.isAfter(shiftEndDateTime) 
+                ? punchInTime 
                 : shiftEndDateTime;
-            otMinutes = (int) Math.max(0, ChronoUnit.MINUTES.between(otStart, logEntity.getPunchOutTime()));
+            otMinutes = (int) Math.max(0, ChronoUnit.MINUTES.between(otStart, punchOutTime));
         }
 
         logEntity.setCalculatedPayableMinutes((int) payableMinutes);

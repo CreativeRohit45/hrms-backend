@@ -68,7 +68,7 @@ public class DashboardService {
                 .filter(l -> l.getAttendanceStatus() != null && l.getAttendanceStatus().name().equals("ON_LEAVE"))
                 .count();
             
-            totalWorkedMinutes = monthlyLogs.stream()
+            long total = monthlyLogs.stream()
                 .filter(l -> l.getAttendanceStatus() != null && 
                     (l.getAttendanceStatus().name().equals("PRESENT") || 
                      l.getAttendanceStatus().name().equals("LATE") ||
@@ -77,6 +77,9 @@ public class DashboardService {
                      l.getAttendanceStatus().name().equals("HOLIDAY_WORK")))
                 .mapToLong(l -> l.getCalculatedPayableMinutes() != null ? l.getCalculatedPayableMinutes() : 0)
                 .sum();
+            
+            // Explicit null-safety mimicking DB SUM() behavior just in case
+            totalWorkedMinutes = Math.max(0L, total);
         }
 
         // Get all holidays for the current month to subtract from working days

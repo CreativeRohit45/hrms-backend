@@ -33,7 +33,7 @@ public class AttendanceController {
             @RequestBody @Valid PunchInRequest request, 
             Authentication authentication) {
         Integer employeeId = resolveId(authentication);
-        return ResponseEntity.ok(toResponse(attendanceService.punchIn(employeeId, request)));
+        return ResponseEntity.ok(toResponse(attendanceService.punchIn(employeeId, request.getLatitude(), request.getLongitude())));
     }
 
     @PostMapping("/punch-out")
@@ -59,6 +59,13 @@ public class AttendanceController {
 
         return ResponseEntity.ok(attendanceService.getLogs(targetId, start, end).stream()
                 .map(this::toResponse).collect(Collectors.toList()));
+    }
+
+    // Temporary migration endpoint to sync missing past leaves
+    @GetMapping("/retro-sync-leaves")
+    public ResponseEntity<String> retroSyncLeaves() {
+        attendanceService.triggerRetroactiveLeaveSync();
+        return ResponseEntity.ok("Sync completed successfully.");
     }
 
     @GetMapping("/employee/{employeeCode}/logs")

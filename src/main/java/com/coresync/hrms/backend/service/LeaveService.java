@@ -34,6 +34,7 @@ public class LeaveService {
     private final SystemSettingsRepository systemSettingsRepository;
     private final CompOffRequestRepository compOffRequestRepository;
     private final AttendanceLogRepository attendanceLogRepository;
+    private final AttendanceService attendanceService;
 
     // ═══════════════════════════════════════════════════════════════════
     //  1. APPLY FOR LEAVE — The Fortress
@@ -200,6 +201,10 @@ public class LeaveService {
         leave.setActionAt(LocalDateTime.now());
 
         LeaveRequest saved = leaveRequestRepository.save(leave);
+        
+        // Instant Sync: Generate/Update attendance logs for the whole leave period (Inclusive Fix)
+        attendanceService.syncLeaveLogs(leave.getEmployee(), leave.getStartDate(), leave.getEndDate());
+        
         log.info("[LeaveService] Leave APPROVED | ID: {} | By Admin: {}", leaveId, adminId);
         return toResponse(saved);
     }
