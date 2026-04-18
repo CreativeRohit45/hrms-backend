@@ -1,6 +1,7 @@
 // src/main/java/com/coresync/hrms/backend/controller/PayrollController.java
 package com.coresync.hrms.backend.controller;
 
+import com.coresync.hrms.backend.dto.BulkPayrollResponse;
 import com.coresync.hrms.backend.dto.PayslipResponse;
 import com.coresync.hrms.backend.entity.Employee;
 import com.coresync.hrms.backend.repository.EmployeeRepository;
@@ -37,13 +38,13 @@ public class PayrollController {
 
     @PostMapping("/run-bulk")
     @PreAuthorize("hasAnyRole('HR_ADMIN', 'SUPER_ADMIN')")
-    public ResponseEntity<Void> runBulk(
+    public ResponseEntity<BulkPayrollResponse> runBulk(
             @RequestParam int month,
             @RequestParam int year,
             Authentication authentication) {
         Integer adminId = resolveId(authentication);
-        payrollPersistenceService.runBulkPayroll(month, year, adminId);
-        return ResponseEntity.ok().build();
+        BulkPayrollResponse result = payrollPersistenceService.runBulkPayroll(month, year, adminId);
+        return ResponseEntity.ok(result);
     }
 
     @PostMapping("/lock")

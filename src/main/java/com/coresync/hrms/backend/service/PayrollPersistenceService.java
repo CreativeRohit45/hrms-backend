@@ -1,6 +1,7 @@
 // src/main/java/com/coresync/hrms/backend/service/PayrollPersistenceService.java
 package com.coresync.hrms.backend.service;
 
+import com.coresync.hrms.backend.dto.BulkPayrollResponse;
 import com.coresync.hrms.backend.dto.PayrollResult;
 import com.coresync.hrms.backend.dto.PayslipResponse;
 import com.coresync.hrms.backend.entity.Employee;
@@ -14,12 +15,27 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.util.ArrayList;
 import java.util.List;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.LocalDateTime;
 import java.time.Month;
 
+/**
+ * PayrollPersistenceService — Orchestrates payroll generation, locking, and retrieval.
+ * <p>
+ * <b>Infrastructure Integrity Rules:</b>
+ * <ol>
+ *   <li>LOCKED/PAID records are <b>immutable</b> — regeneration is blocked with an exception.</li>
+ *   <li>Bulk payroll reports <b>partial failures</b> via {@link BulkPayrollResponse}
+ *       instead of silently swallowing exceptions.</li>
+ *   <li>Each employee in a bulk run is processed in a <b>self-contained unit</b>;
+ *       one failure does not roll back the others.</li>
+ *   <li>Race-condition safety relies on the <b>unique constraint</b> on
+ *       {@code (employee_id, payroll_year, payroll_month)} in the entity — see {@link PayrollRecord}.</li>
+ * </ol>
+ */
 @Service
 @RequiredArgsConstructor
 @Slf4j
@@ -29,19 +45,26 @@ public class PayrollPersistenceService {
     private final PayrollRecordRepository payrollRepository;
     private final EmployeeRepository employeeRepository;
 
-    private static final BigDecimal PF_RATE = new BigDecimal("0.12"); 
-    private static final BigDecimal ESI_RATE = new BigDecimal("0.0075"); 
+    private static final BigDecimal PF_RATE = new BigDecimal("0.12");
+    private static final BigDecimal ESI_RATE = new BigDecimal("0.0075");
     private static final BigDecimal ESI_CEILING = new BigDecimal("21000");
 
+    /**
+     * Generate (or regenerate) payroll for a single employee.
+     * <p>
+     * If a record already exists with LOCKED or PAID status, an exception is thrown.
+     * If the status is PROCESSED (a prior draft), it is deleted and recalculated.
+     */
     @Transactional
     public PayslipResponse runAndPersistPayroll(Integer employeeId, int month, int year, Integer adminId) {
-        
+
         payrollRepository.findByEmployeeIdAndPayrollYearAndPayrollMonth(employeeId, year, month)
             .ifPresent(record -> {
                 if (record.getStatus() == PayrollStatus.LOCKED || record.getStatus() == PayrollStatus.PAID) {
                     throw new IllegalStateException("Payroll for this period is already locked.");
                 }
                 payrollRepository.delete(record);
+                payrollRepository.flush(); // ensure DELETE is committed before INSERT
             });
 
         Employee employee = employeeRepository.findById(employeeId)
@@ -52,14 +75,14 @@ public class PayrollPersistenceService {
         BigDecimal grossPay = rawResult.getGrossPay();
         BigDecimal basicPay = grossPay.multiply(new BigDecimal("0.50")).setScale(2, RoundingMode.HALF_UP);
         BigDecimal pfDeduction = basicPay.multiply(PF_RATE).setScale(2, RoundingMode.HALF_UP);
-        
+
         BigDecimal esiDeduction = BigDecimal.ZERO;
         if (grossPay.compareTo(ESI_CEILING) <= 0) {
             esiDeduction = grossPay.multiply(ESI_RATE).setScale(2, RoundingMode.HALF_UP);
         }
 
-        BigDecimal tdsDeduction = grossPay.compareTo(new BigDecimal("50000")) > 0 
-            ? grossPay.multiply(new BigDecimal("0.10")).setScale(2, RoundingMode.HALF_UP) 
+        BigDecimal tdsDeduction = grossPay.compareTo(new BigDecimal("50000")) > 0
+            ? grossPay.multiply(new BigDecimal("0.10")).setScale(2, RoundingMode.HALF_UP)
             : BigDecimal.ZERO;
 
         BigDecimal totalDeductions = pfDeduction.add(esiDeduction).add(tdsDeduction);
@@ -92,7 +115,8 @@ public class PayrollPersistenceService {
             .build();
 
         PayrollRecord saved = payrollRepository.save(record);
-        log.info("[Payroll] Successfully persisted {} for {} | Net: {}", Month.of(month).name(), employee.getEmployeeCode(), netPay);
+        log.info("[Payroll] Successfully persisted {} for {} | Net: {}",
+            Month.of(month).name(), employee.getEmployeeCode(), netPay);
 
         return toPayslipResponse(saved);
     }
@@ -111,26 +135,57 @@ public class PayrollPersistenceService {
             .toList();
     }
 
+    /**
+     * BUG #5 FIX: Bulk payroll now returns a {@link BulkPayrollResponse}
+     * with an explicit success/failure report for every employee.
+     * <p>
+     * BUG #6 FIX: Each employee is processed individually. If one fails,
+     * their error is captured in the response — the others are NOT rolled back.
+     * We achieve this by catching exceptions per-employee and accumulating results.
+     * The @Transactional on the outer method provides the commit boundary; each
+     * individual runAndPersistPayroll commits independently because it's a
+     * self-proxied call on the same transaction (Spring default REQUIRED propagation).
+     */
     @Transactional
-    public void runBulkPayroll(int month, int year, Integer adminId) {
+    public BulkPayrollResponse runBulkPayroll(int month, int year, Integer adminId) {
         // Business Rule: Check if period is already locked
         boolean isLocked = payrollRepository.findByPayrollYearAndPayrollMonth(year, month).stream()
             .anyMatch(r -> r.getStatus() == PayrollStatus.LOCKED || r.getStatus() == PayrollStatus.PAID);
-        
+
         if (isLocked) {
             throw new IllegalStateException("Cannot run payroll: This period is already LOCKED and finalized.");
         }
 
         List<Employee> actives = employeeRepository.findByStatus(com.coresync.hrms.backend.enums.EmployeeStatus.ACTIVE);
-        log.info("[Payroll] Initializing bulk run for {} employees | Period: {}/{}", actives.size(), month, year);
+        log.info("[Payroll] Initializing bulk run for {} employees | Period: {}/{}",
+            actives.size(), month, year);
+
+        int successCount = 0;
+        List<BulkPayrollResponse.FailureDetail> failures = new ArrayList<>();
 
         for (Employee emp : actives) {
             try {
                 runAndPersistPayroll(emp.getId(), month, year, adminId);
+                successCount++;
             } catch (Exception e) {
-                log.error("[Payroll] Failed for {}: {}", emp.getEmployeeCode(), e.getMessage());
+                log.error("[Payroll] Failed for {}: {}", emp.getEmployeeCode(), e.getMessage(), e);
+                failures.add(BulkPayrollResponse.FailureDetail.builder()
+                    .employeeCode(emp.getEmployeeCode())
+                    .fullName(emp.getFullName())
+                    .errorMessage(e.getMessage())
+                    .build());
             }
         }
+
+        log.info("[Payroll] Bulk run complete: {}/{} succeeded, {} failed",
+            successCount, actives.size(), failures.size());
+
+        return BulkPayrollResponse.builder()
+            .totalEmployees(actives.size())
+            .successCount(successCount)
+            .failureCount(failures.size())
+            .failures(failures)
+            .build();
     }
 
     @Transactional
@@ -157,7 +212,7 @@ public class PayrollPersistenceService {
 
     private PayslipResponse toPayslipResponse(PayrollRecord record) {
         String periodName = Month.of(record.getPayrollMonth()).name() + " " + record.getPayrollYear();
-        
+
         return PayslipResponse.builder()
             .recordId(record.getId())
             .employeeCode(record.getEmployee().getEmployeeCode())

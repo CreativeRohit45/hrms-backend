@@ -9,10 +9,16 @@ import java.math.BigDecimal;
 import java.time.LocalDateTime;
 
 @Entity
-@Table(name = "payroll_records", indexes = {
-    @Index(name = "idx_payroll_period_status", columnList = "payroll_year, payroll_month, status"),
-    @Index(name = "idx_payroll_employee_period", columnList = "employee_id, payroll_year, payroll_month")
-})
+@Table(name = "payroll_records",
+    uniqueConstraints = {
+        @UniqueConstraint(name = "uk_payroll_employee_period",
+            columnNames = {"employee_id", "payroll_year", "payroll_month"})
+    },
+    indexes = {
+        @Index(name = "idx_payroll_period_status", columnList = "payroll_year, payroll_month, status"),
+        @Index(name = "idx_payroll_employee_period", columnList = "employee_id, payroll_year, payroll_month")
+    }
+)
 @DynamicUpdate
 @Getter @Setter @NoArgsConstructor @AllArgsConstructor @Builder
 public class PayrollRecord {
