@@ -643,6 +643,6 @@ public class AttendanceService {
             ? manager.getDepartment().getId() 
             : null;
 
-        return attendanceLogRepository.findUnifiedInbox(deptId, pageable);
+        return attendanceLogRepository.getUnifiedInbox(deptId, pageable);
     }
 }
