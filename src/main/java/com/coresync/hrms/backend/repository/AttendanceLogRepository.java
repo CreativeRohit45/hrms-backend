@@ -7,6 +7,7 @@ import org.springframework.data.repository.query.Param;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import com.coresync.hrms.backend.projection.UnifiedInboxProjection;
+import org.springframework.data.jpa.repository.EntityGraph;
 import java.time.LocalDate;
 import java.util.List;
 import java.util.Optional;
@@ -30,7 +31,10 @@ public interface AttendanceLogRepository extends JpaRepository<AttendanceLog, Lo
 
     Optional<AttendanceLog> findByEmployeeIdAndPunchOutTimeIsNull(Integer employeeId);
 
+    @EntityGraph(attributePaths = {"employee", "shift", "location"})
     List<AttendanceLog> findByWorkDateOrderByPunchInTimeDesc(LocalDate workDate);
+
+    @EntityGraph(attributePaths = {"employee", "shift", "location"})
     Page<AttendanceLog> findByWorkDateOrderByPunchInTimeDesc(LocalDate workDate, org.springframework.data.domain.Pageable pageable);
 
     boolean existsByEmployeeIdAndWorkDateAndPunchOutTimeIsNotNull(Integer employeeId, LocalDate workDate);
@@ -64,6 +68,7 @@ public interface AttendanceLogRepository extends JpaRepository<AttendanceLog, Lo
 
     List<AttendanceLog> findByCorrectionStatus(com.coresync.hrms.backend.enums.CorrectionStatus status);
 
+    @EntityGraph(attributePaths = {"employee", "shift", "location"})
     @Query("SELECT a FROM AttendanceLog a WHERE a.employee.department.id = :deptId AND a.workDate = :date")
     Page<AttendanceLog> findByEmployeeDepartmentIdAndWorkDate(
         @Param("deptId") Integer deptId,

@@ -58,6 +58,10 @@ public class PayrollRecord {
     @Column(name = "deduction_pf", nullable = false, precision = 10, scale = 2)
     private BigDecimal deductionPf;
 
+    @Column(name = "deduction_lwp", nullable = false, precision = 10, scale = 2)
+    @Builder.Default
+    private BigDecimal deductionLwp = BigDecimal.ZERO;
+
     @Column(name = "deduction_esi", nullable = false, precision = 10, scale = 2)
     private BigDecimal deductionEsi;
 
@@ -91,6 +95,14 @@ public class PayrollRecord {
     @Enumerated(EnumType.STRING)
     @Column(name = "status", nullable = false, length = 20)
     private PayrollStatus status;
+
+    @OneToMany(mappedBy = "payrollRecord", cascade = CascadeType.ALL, fetch = FetchType.LAZY)
+    @Builder.Default
+    private java.util.List<PayrollAdjustment> adjustments = new java.util.ArrayList<>();
+
+    @Column(name = "total_adjustment_amount", nullable = false, precision = 12, scale = 2)
+    @Builder.Default
+    private BigDecimal totalAdjustmentAmount = BigDecimal.ZERO;
 
     @Column(name = "payslip_sent_whatsapp", nullable = false)
     private boolean payslipSentWhatsapp;

@@ -36,7 +36,7 @@ public class AttendanceLog {
     @JoinColumn(name = "location_id", nullable = false)
     private CompanyLocation location;
 
-    @Column(name = "punch_in_time", nullable = false)
+    @Column(name = "punch_in_time", nullable = true)
     private LocalDateTime punchInTime;
 
     @Column(name = "punch_out_time")

@@ -146,6 +146,20 @@ public class LeaveController {
         return ResponseEntity.ok(leaveService.manualAdjustBalance(request, adminId));
     }
 
+    @PostMapping("/admin/override")
+    @PreAuthorize("hasAnyRole('HR_ADMIN', 'SUPER_ADMIN')")
+    public ResponseEntity<LeaveBalanceResponse> overrideLeave(
+            @Valid @RequestBody LeaveOverrideRequest request,
+            Authentication authentication) {
+        Integer adminId = resolveId(authentication);
+        return ResponseEntity.ok(leaveService.overrideBalance(
+            request.getEmployeeId(), 
+            request.getLeaveTypeId(), 
+            request.getAmount(), 
+            request.getReason(), 
+            adminId));
+    }
+
     @PostMapping("/admin/accrual/run")
     @PreAuthorize("hasAnyRole('HR_ADMIN', 'SUPER_ADMIN')")
     public ResponseEntity<Void> runAccrual(Authentication authentication) {

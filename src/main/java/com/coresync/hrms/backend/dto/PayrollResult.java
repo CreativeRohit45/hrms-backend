@@ -26,6 +26,13 @@ public class PayrollResult {
     private BigDecimal deductionLwp;
     private BigDecimal netPay;
 
+    // Granular Adjustments for UI transparency
+    private BigDecimal adjustmentBonus;
+    private BigDecimal adjustmentArrears;
+    private BigDecimal adjustmentDeductionDamage;
+    private BigDecimal adjustmentDeductionOther;
+    private BigDecimal totalAdjustmentAmount;
+
     private int presentDays;
     private int absentDays;
     private int lateDays;

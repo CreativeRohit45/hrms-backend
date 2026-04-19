@@ -272,17 +272,21 @@ public class LeaveService {
         LeaveRequest leave = leaveRequestRepository.findById(leaveId)
             .orElseThrow(() -> new EntityNotFoundException("Leave request not found"));
 
-        if (leave.getStatus() != LeaveStatus.APPROVED && leave.getStatus() != LeaveStatus.PENDING) {
-            throw new IllegalStateException("Status " + leave.getStatus() + " cannot be revoked.");
+        if (leave.getStatus() != LeaveStatus.APPROVED) {
+            throw new IllegalStateException("Only APPROVED leave requests can be revoked. Current status: " + leave.getStatus());
         }
 
-        refundBalance(leave, "Leave revoked by admin ID " + adminId + ": " + reason);
-        leave.setStatus(LeaveStatus.CANCELLED);
+        refundBalance(leave, "Leave REVOKED by admin ID " + adminId + ": " + reason);
+        leave.setStatus(LeaveStatus.REVOKED);
         leave.setActionByUserId(adminId);
         leave.setActionAt(LocalDateTime.now());
-        leave.setRejectionReason("REVOKED: " + reason);
+        leave.setRejectionReason(reason);
 
         LeaveRequest saved = leaveRequestRepository.save(leave);
+        
+        // Reverse the attendance logs if it was already approved/synced
+        attendanceService.syncLeaveLogs(leave.getEmployee(), leave.getStartDate(), leave.getEndDate());
+
         log.info("[LeaveService] Leave REVOKED | ID: {} | By Admin: {}", leaveId, adminId);
         return toResponse(saved);
     }
@@ -367,6 +371,36 @@ public class LeaveService {
             request.getAmount(), balance.getBalance(),
             "Manual adjustment by admin " + adminId + ": " + request.getReason(),
             null, adminId);
+
+        return toBalanceResponse(balance);
+    }
+
+    @Transactional
+    public LeaveBalanceResponse overrideBalance(Integer employeeId, Integer leaveTypeId, Double amount, String reason, Integer adminId) {
+        Employee employee = findEmployee(employeeId);
+        LeaveType type = leaveTypeRepository.findById(leaveTypeId)
+            .orElseThrow(() -> new EntityNotFoundException("Leave type not found"));
+
+        int year = LocalDate.now().getYear();
+        LeaveBalance balance = leaveBalanceRepository.findForUpdate(employee.getId(), type.getId(), year)
+            .orElseGet(() -> createEmptyBalance(employee, type, year));
+
+        // Direct adjustment (can be negative)
+        if (amount > 0) {
+            balance.credit(amount);
+        } else {
+            balance.deduct(Math.abs(amount));
+        }
+        
+        leaveBalanceRepository.save(balance);
+
+        writeAudit(employee, type, year, LeaveTransactionType.MANUAL_ADJUSTMENT,
+            amount, balance.getBalance(),
+            "HR OVERRIDE by admin " + adminId + ": " + reason,
+            null, adminId);
+
+        log.info("[LeaveService] HR OVERRIDE | Employee: {} | Type: {} | Adj: {} | Final: {}", 
+            employee.getEmployeeCode(), type.getCode(), amount, balance.getBalance());
 
         return toBalanceResponse(balance);
     }

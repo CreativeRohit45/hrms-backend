@@ -4,7 +4,9 @@ package com.coresync.hrms.backend.controller;
 import com.coresync.hrms.backend.dto.BulkPayrollResponse;
 import com.coresync.hrms.backend.dto.PayslipResponse;
 import com.coresync.hrms.backend.entity.Employee;
+import com.coresync.hrms.backend.enums.PayrollAdjustmentType;
 import com.coresync.hrms.backend.repository.EmployeeRepository;
+import com.coresync.hrms.backend.service.PayrollAdjustmentService;
 import com.coresync.hrms.backend.service.PayrollPersistenceService;
 import com.coresync.hrms.backend.service.PdfService;
 import jakarta.persistence.EntityNotFoundException;
@@ -16,6 +18,8 @@ import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.*;
 
+import java.math.BigDecimal;
+import java.security.Principal;
 import java.util.List;
 
 @RestController
@@ -24,6 +28,7 @@ import java.util.List;
 public class PayrollController {
 
     private final PayrollPersistenceService payrollPersistenceService;
+    private final PayrollAdjustmentService adjustmentService;
     private final PdfService pdfService;
     private final EmployeeRepository employeeRepository;
 
@@ -53,10 +58,34 @@ public class PayrollController {
 
     @PostMapping("/lock")
     @PreAuthorize("hasAnyRole('HR_ADMIN', 'SUPER_ADMIN')")
-    public ResponseEntity<Void> lock(
-            @RequestParam int month,
-            @RequestParam int year) {
+    public ResponseEntity<Void> lockPayroll(@RequestParam int month, @RequestParam int year) {
         payrollPersistenceService.lockPayroll(month, year);
+        return ResponseEntity.ok().build();
+    }
+
+    @PostMapping("/records/{id}/recalculate")
+    @PreAuthorize("hasAnyRole('HR_ADMIN', 'SUPER_ADMIN')")
+    public ResponseEntity<Void> recalculate(@PathVariable Integer id) {
+        adjustmentService.recalculateRecord(id);
+        return ResponseEntity.ok().build();
+    }
+
+    @PostMapping("/records/{id}/adjustments")
+    @PreAuthorize("hasAnyRole('HR_ADMIN', 'SUPER_ADMIN')")
+    public ResponseEntity<Void> addAdjustment(
+            @PathVariable Integer id,
+            @RequestParam PayrollAdjustmentType type,
+            @RequestParam BigDecimal amount,
+            @RequestParam String description,
+            Principal principal) {
+        adjustmentService.addAdjustment(id, type, amount, description, principal.getName());
+        return ResponseEntity.ok().build();
+    }
+
+    @DeleteMapping("/adjustments/{id}")
+    @PreAuthorize("hasAnyRole('HR_ADMIN', 'SUPER_ADMIN')")
+    public ResponseEntity<Void> deleteAdjustment(@PathVariable Long id) {
+        adjustmentService.deleteAdjustment(id);
         return ResponseEntity.ok().build();
     }
 

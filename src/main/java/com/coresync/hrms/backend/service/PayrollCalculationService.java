@@ -7,9 +7,14 @@ import com.coresync.hrms.backend.entity.Employee;
 import com.coresync.hrms.backend.entity.LeaveRequest;
 import com.coresync.hrms.backend.enums.AttendanceStatus;
 import com.coresync.hrms.backend.enums.LeaveStatus;
+import com.coresync.hrms.backend.enums.PayrollAdjustmentType;
 import com.coresync.hrms.backend.repository.AttendanceLogRepository;
 import com.coresync.hrms.backend.repository.EmployeeRepository;
 import com.coresync.hrms.backend.repository.LeaveRequestRepository;
+import com.coresync.hrms.backend.repository.PayrollAdjustmentRepository;
+import com.coresync.hrms.backend.repository.PayrollRecordRepository;
+import com.coresync.hrms.backend.entity.PayrollAdjustment;
+import com.coresync.hrms.backend.entity.PayrollRecord;
 import jakarta.persistence.EntityNotFoundException;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -50,6 +55,8 @@ public class PayrollCalculationService {
     private final AttendanceLogRepository attendanceLogRepository;
     private final EmployeeRepository employeeRepository;
     private final LeaveRequestRepository leaveRequestRepository;
+    private final PayrollAdjustmentRepository payrollAdjustmentRepository;
+    private final PayrollRecordRepository payrollRecordRepository;
 
     private static final BigDecimal MINUTES_PER_HOUR = BigDecimal.valueOf(60);
     private static final BigDecimal ONE_HUNDRED = new BigDecimal("100");
@@ -190,20 +197,48 @@ public class PayrollCalculationService {
         //  because this service no longer performs that deduction.
         // ═══════════════════════════════════════════════════════════
 
-        // ── Final pay formula: Salaried model ────────────────────────
+        // ═══════════════════════════════════════════════════════════
+        //  PASS 3: Manual Adjustments (Bonuses, Arrears, etc.)
+        // ═══════════════════════════════════════════════════════════
+        BigDecimal adjBonus = BigDecimal.ZERO;
+        BigDecimal adjArrears = BigDecimal.ZERO;
+        BigDecimal adjDeductionDamage = BigDecimal.ZERO;
+        BigDecimal adjDeductionOther = BigDecimal.ZERO;
+
+        // Try to find an existing record to fetch adjustments
+        var optRecord = payrollRecordRepository.findByEmployeeIdAndPayrollYearAndPayrollMonth(employeeId, payrollYear, payrollMonth);
+        if (optRecord.isPresent()) {
+            List<PayrollAdjustment> adjustments = payrollAdjustmentRepository.findByPayrollRecordIdAndIsDeletedFalse(optRecord.get().getId());
+            for (PayrollAdjustment adj : adjustments) {
+                switch (adj.getType()) {
+                    case BONUS -> adjBonus = adjBonus.add(adj.getAmount());
+                    case ARREARS -> adjArrears = adjArrears.add(adj.getAmount());
+                    case DEDUCTION_DAMAGE -> adjDeductionDamage = adjDeductionDamage.add(adj.getAmount());
+                    case DEDUCTION_OTHER -> adjDeductionOther = adjDeductionOther.add(adj.getAmount());
+                }
+            }
+        }
+
+        BigDecimal totalPositiveAdj = adjBonus.add(adjArrears);
+        BigDecimal totalNegativeAdj = adjDeductionDamage.add(adjDeductionOther);
+        BigDecimal totalAdjAmount = totalPositiveAdj.subtract(totalNegativeAdj);
+
+        // ── Final pay formula: Salaried model + Adjustments ──────────
         BigDecimal grossPayBeforeDeductions = baseSalary
             .add(hraAllowance)
             .add(overtimePay)
+            .add(totalPositiveAdj)
             .setScale(SCALE, ROUNDING);
 
         BigDecimal netPay = grossPayBeforeDeductions
             .subtract(pfDeduction)
             .subtract(lwpDeduction)
+            .subtract(totalNegativeAdj)
             .setScale(SCALE, ROUNDING);
 
-        log.info("[Payroll] {} | Base={} HRA={} OT={} Gross={} | PF={} LWP={} ({}d) | Net={}",
-            employee.getEmployeeCode(), baseSalary, hraAllowance, overtimePay,
-            grossPayBeforeDeductions, pfDeduction, lwpDeduction, lwpDays, netPay);
+        log.info("[Payroll] {} | Base={} HRA={} OT={} Adj={} Gross={} | PF={} LWP={} | Net={}",
+            employee.getEmployeeCode(), baseSalary, hraAllowance, overtimePay, totalAdjAmount,
+            grossPayBeforeDeductions, pfDeduction, lwpDeduction, netPay);
 
         return PayrollResult.builder()
             .employeeId(employeeId)
@@ -220,6 +255,11 @@ public class PayrollCalculationService {
             .deductionPf(pfDeduction)
             .allowanceHra(hraAllowance)
             .deductionLwp(lwpDeduction)
+            .adjustmentBonus(adjBonus)
+            .adjustmentArrears(adjArrears)
+            .adjustmentDeductionDamage(adjDeductionDamage)
+            .adjustmentDeductionOther(adjDeductionOther)
+            .totalAdjustmentAmount(totalAdjAmount)
             .netPay(netPay)
             .presentDays(presentDays)
             .absentDays(absentDays)

@@ -627,11 +627,18 @@ public class AttendanceService {
         Employee manager = employeeRepository.findById(managerId)
             .orElseThrow(() -> new EntityNotFoundException("Manager not found"));
 
+        Page<AttendanceLog> rosterPage;
         if (manager.getRole() == EmployeeRole.DEPARTMENT_MANAGER) {
-            return attendanceLogRepository.findByEmployeeDepartmentIdAndWorkDate(
+            rosterPage = attendanceLogRepository.findByEmployeeDepartmentIdAndWorkDate(
                 manager.getDepartment().getId(), date, pageable);
+        } else {
+            rosterPage = attendanceLogRepository.findByWorkDateOrderByPunchInTimeDesc(date, pageable);
         }
-        return attendanceLogRepository.findByWorkDateOrderByPunchInTimeDesc(date, pageable);
+
+        // Apply auto-healing to the results in the page
+        rosterPage.forEach(this::autoHealLog);
+        
+        return rosterPage;
     }
 
     @Transactional(readOnly = true)

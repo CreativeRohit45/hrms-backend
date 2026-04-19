@@ -2,5 +2,5 @@
 package com.coresync.hrms.backend.enums;
 
 public enum LeaveStatus {
-    PENDING, APPROVED, REJECTED, CANCELLED
+    PENDING, APPROVED, REJECTED, CANCELLED, REVOKED
 }

@@ -5,7 +5,9 @@ import com.coresync.hrms.backend.dto.BulkPayrollResponse;
 import com.coresync.hrms.backend.dto.PayrollResult;
 import com.coresync.hrms.backend.dto.PayslipResponse;
 import com.coresync.hrms.backend.entity.Employee;
+import com.coresync.hrms.backend.entity.PayrollAdjustment;
 import com.coresync.hrms.backend.entity.PayrollRecord;
+import com.coresync.hrms.backend.enums.PayrollAdjustmentType;
 import com.coresync.hrms.backend.enums.PayrollStatus;
 import com.coresync.hrms.backend.repository.EmployeeRepository;
 import com.coresync.hrms.backend.repository.PayrollRecordRepository;
@@ -119,6 +121,25 @@ public class PayrollPersistenceService {
             Month.of(month).name(), employee.getEmployeeCode(), netPay);
 
         return toPayslipResponse(saved);
+    }
+
+    /**
+     * Updates an existing PayrollRecord with new calculation results.
+     * Used for targeted recalculation after adding adjustments.
+     */
+    @Transactional
+    public void saveSingleRecord(PayrollRecord record, PayrollResult result) {
+        record.setTotalPayableMinutes(result.getTotalPayableMinutes());
+        record.setTotalOvertimeMinutes(result.getTotalOvertimeMinutes());
+        record.setGrossPay(result.getGrossPay());
+        record.setOvertimePay(result.getOvertimePay());
+        record.setDeductionPf(result.getDeductionPf());
+        record.setDeductionLwp(result.getDeductionLwp());
+        record.setTotalAdjustmentAmount(result.getTotalAdjustmentAmount());
+        record.setNetPay(result.getNetPay());
+        record.setUpdatedAt(LocalDateTime.now());
+
+        payrollRepository.save(record);
     }
 
     @Transactional(readOnly = true)
@@ -235,8 +256,20 @@ public class PayrollPersistenceService {
             .deductionOther(record.getDeductionOther())
             .totalDeductions(record.getTotalDeductions())
             .netPay(record.getNetPay())
+            .adjustmentBonus(calculateTotal(record, PayrollAdjustmentType.BONUS))
+            .adjustmentArrears(calculateTotal(record, PayrollAdjustmentType.ARREARS))
+            .adjustmentDeductionDamage(calculateTotal(record, PayrollAdjustmentType.DEDUCTION_DAMAGE))
+            .adjustmentDeductionOther(calculateTotal(record, PayrollAdjustmentType.DEDUCTION_OTHER))
+            .totalAdjustmentAmount(record.getTotalAdjustmentAmount())
             .status(record.getStatus().name())
             .processedAt(record.getProcessedAt())
             .build();
+    }
+
+    private BigDecimal calculateTotal(PayrollRecord record, PayrollAdjustmentType type) {
+        return record.getAdjustments().stream()
+            .filter(a -> !a.isDeleted() && a.getType() == type)
+            .map(PayrollAdjustment::getAmount)
+            .reduce(BigDecimal.ZERO, BigDecimal::add);
     }
 }

@@ -33,6 +33,13 @@ public class PayslipResponse {
     private BigDecimal deductionOther;
     private BigDecimal totalDeductions;
     private BigDecimal netPay;
+
+    // Adjustments
+    private BigDecimal adjustmentBonus;
+    private BigDecimal adjustmentArrears;
+    private BigDecimal adjustmentDeductionDamage;
+    private BigDecimal adjustmentDeductionOther;
+    private BigDecimal totalAdjustmentAmount;
     
     private String status;
     private java.time.LocalDateTime processedAt;
