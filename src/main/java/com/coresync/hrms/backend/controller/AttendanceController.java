@@ -16,6 +16,9 @@ import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.security.core.Authentication;
 
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
+import com.coresync.hrms.backend.projection.UnifiedInboxProjection;
 import java.time.LocalDate;
 import java.util.List;
 import java.util.stream.Collectors;
@@ -83,7 +86,16 @@ public class AttendanceController {
         return ResponseEntity.ok(toResponse(attendanceService.requestCorrection(logId, request)));
     }
 
-    // --- FEATURE 1: UNIFIED INBOX (Corrections) ---
+    // --- FEATURE 1: UNIFIED INBOX (Consolidated Feed) ---
+    @GetMapping({"/inbox", "/unified-inbox"})
+    @PreAuthorize("hasAnyRole('DEPARTMENT_MANAGER', 'HR_ADMIN', 'SUPER_ADMIN')")
+    public ResponseEntity<Page<UnifiedInboxProjection>> getUnifiedInbox(
+            Pageable pageable,
+            Authentication authentication) {
+        Integer managerId = resolveId(authentication);
+        return ResponseEntity.ok(attendanceService.getUnifiedInbox(managerId, pageable));
+    }
+
     @GetMapping({"/pending-corrections", "/corrections/pending"})
     @PreAuthorize("hasAnyRole('DEPARTMENT_MANAGER', 'HR_ADMIN', 'SUPER_ADMIN')")
     public ResponseEntity<List<AttendanceLogResponse>> getPendingCorrections(Authentication authentication) {
@@ -115,12 +127,13 @@ public class AttendanceController {
     // --- FEATURE 3: SCOPED ROSTER ---
     @GetMapping("/roster")
     @PreAuthorize("hasAnyRole('DEPARTMENT_MANAGER', 'HR_ADMIN', 'SUPER_ADMIN')")
-    public ResponseEntity<List<AttendanceLogResponse>> getDailyRoster(
+    public ResponseEntity<Page<AttendanceLogResponse>> getDailyRoster(
             @RequestParam("date") @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate date,
+            Pageable pageable,
             Authentication authentication) {
         Integer managerId = resolveId(authentication);
-        return ResponseEntity.ok(attendanceService.getDailyRoster(managerId, date).stream()
-                .map(this::toResponse).collect(Collectors.toList()));
+        return ResponseEntity.ok(attendanceService.getDailyRoster(managerId, date, pageable)
+                .map(this::toResponse));
     }
 
     private Integer resolveId(Authentication authentication) {

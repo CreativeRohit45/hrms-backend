@@ -36,6 +36,10 @@ public class GatepassService {
     public GatepassResponse applyGatepass(Integer employeeId, GatepassApplyRequest request) {
         Employee employee = findEmployee(employeeId);
         
+        // --- SECURITY GUARDRAIL: Must be punched in ---
+        attendanceLogRepository.findOpenSession(employeeId)
+            .orElseThrow(() -> new IllegalStateException("Cannot request gatepass: No active punch-in session found for today."));
+
         // --- NIGHT SHIFT AWARE VALIDATION ---
         java.time.LocalDateTime effectiveInTime = request.getRequestedInTime();
         java.time.LocalDateTime effectiveOutTime = request.getRequestedOutTime();

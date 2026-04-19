@@ -4,7 +4,9 @@ import com.coresync.hrms.backend.entity.AttendanceLog;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
-
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
+import com.coresync.hrms.backend.projection.UnifiedInboxProjection;
 import java.time.LocalDate;
 import java.util.List;
 import java.util.Optional;
@@ -28,7 +30,7 @@ public interface AttendanceLogRepository extends JpaRepository<AttendanceLog, Lo
 
     Optional<AttendanceLog> findByEmployeeIdAndPunchOutTimeIsNull(Integer employeeId);
 
-    List<AttendanceLog> findByWorkDateOrderByPunchInTimeDesc(LocalDate workDate);
+    Page<AttendanceLog> findByWorkDateOrderByPunchInTimeDesc(LocalDate workDate, org.springframework.data.domain.Pageable pageable);
 
     boolean existsByEmployeeIdAndWorkDateAndPunchOutTimeIsNotNull(Integer employeeId, LocalDate workDate);
 
@@ -62,8 +64,35 @@ public interface AttendanceLogRepository extends JpaRepository<AttendanceLog, Lo
     List<AttendanceLog> findByCorrectionStatus(com.coresync.hrms.backend.enums.CorrectionStatus status);
 
     @Query("SELECT a FROM AttendanceLog a WHERE a.employee.department.id = :deptId AND a.workDate = :date")
-    List<AttendanceLog> findByEmployeeDepartmentIdAndWorkDate(
+    Page<AttendanceLog> findByEmployeeDepartmentIdAndWorkDate(
         @Param("deptId") Integer deptId,
-        @Param("date")   LocalDate date
+        @Param("date")   LocalDate date,
+        org.springframework.data.domain.Pageable pageable
     );
+
+    @Query(value = 
+        "WITH InboxQueue AS (" +
+        "  SELECT CONCAT('LEAVE-', CAST(lr.id AS CHAR)) as id, 'LEAVE' as requestType, lr.employee_id, lr.reason as details, lr.status, lr.created_at as createdAt, lr.start_date as referenceDate FROM leave_requests lr WHERE lr.status = 'PENDING' " +
+        "  UNION ALL " +
+        "  SELECT CONCAT('GATEPASS-', CAST(g.id AS CHAR)) as id, 'GATEPASS' as requestType, g.employee_id, g.reason as details, g.status, g.created_at as createdAt, g.request_date as referenceDate FROM gatepasses g WHERE g.status = 'PENDING' " +
+        "  UNION ALL " +
+        "  SELECT CONCAT('CORRECTION-', CAST(al.id AS CHAR)) as id, 'CORRECTION' as requestType, al.employee_id, al.correction_reason as details, al.correction_status as status, al.created_at as createdAt, al.work_date as referenceDate FROM attendance_logs al WHERE al.correction_status = 'PENDING'" +
+        ") " +
+        "SELECT i.id, i.requestType, i.employee_id as employeeId, e.full_name as employeeName, e.employee_code as employeeCode, i.details, CAST(i.status AS CHAR) as status, i.createdAt, i.referenceDate " +
+        "FROM InboxQueue i " +
+        "JOIN employees e ON i.employee_id = e.id " +
+        "WHERE (:deptId IS NULL OR e.department_id = :deptId) " +
+        "ORDER BY i.createdAt DESC",
+        countQuery = 
+        "SELECT COUNT(*) FROM (" +
+        "  SELECT lr.employee_id FROM leave_requests lr WHERE lr.status = 'PENDING' " +
+        "  UNION ALL " +
+        "  SELECT g.employee_id FROM gatepasses g WHERE g.status = 'PENDING' " +
+        "  UNION ALL " +
+        "  SELECT al.employee_id FROM attendance_logs al WHERE al.correction_status = 'PENDING' " +
+        ") as i " +
+        "JOIN employees e ON i.employee_id = e.id " +
+        "WHERE (:deptId IS NULL OR e.department_id = :deptId)",
+        nativeQuery = true)
+    Page<UnifiedInboxProjection> findUnifiedInbox(@Param("deptId") Integer deptId, Pageable pageable);
 }

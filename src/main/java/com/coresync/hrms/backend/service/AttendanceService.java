@@ -14,6 +14,9 @@ import com.coresync.hrms.backend.repository.AttendanceLogRepository;
 import com.coresync.hrms.backend.repository.EmployeeRepository;
 import com.coresync.hrms.backend.repository.HolidayRepository;
 import com.coresync.hrms.backend.enums.EmployeeRole;
+import com.coresync.hrms.backend.projection.UnifiedInboxProjection;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 
 import jakarta.persistence.EntityNotFoundException;
 import lombok.RequiredArgsConstructor;
@@ -620,14 +623,26 @@ public class AttendanceService {
     }
 
     @Transactional(readOnly = true)
-    public List<AttendanceLog> getDailyRoster(Integer managerId, LocalDate date) {
+    public Page<AttendanceLog> getDailyRoster(Integer managerId, LocalDate date, Pageable pageable) {
         Employee manager = employeeRepository.findById(managerId)
             .orElseThrow(() -> new EntityNotFoundException("Manager not found"));
 
         if (manager.getRole() == EmployeeRole.DEPARTMENT_MANAGER) {
             return attendanceLogRepository.findByEmployeeDepartmentIdAndWorkDate(
-                manager.getDepartment().getId(), date);
+                manager.getDepartment().getId(), date, pageable);
         }
-        return attendanceLogRepository.findByWorkDateOrderByPunchInTimeDesc(date);
+        return attendanceLogRepository.findByWorkDateOrderByPunchInTimeDesc(date, pageable);
+    }
+
+    @Transactional(readOnly = true)
+    public Page<UnifiedInboxProjection> getUnifiedInbox(Integer managerId, Pageable pageable) {
+        Employee manager = employeeRepository.findById(managerId)
+            .orElseThrow(() -> new EntityNotFoundException("Manager not found"));
+
+        Integer deptId = (manager.getRole() == EmployeeRole.DEPARTMENT_MANAGER) 
+            ? manager.getDepartment().getId() 
+            : null;
+
+        return attendanceLogRepository.findUnifiedInbox(deptId, pageable);
     }
 }
