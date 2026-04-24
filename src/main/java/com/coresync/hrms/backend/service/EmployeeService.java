@@ -122,6 +122,20 @@ public class EmployeeService {
     }
 
     @Transactional
+    public void changePassword(String employeeCode, String currentPassword, String newPassword) {
+        Employee employee = employeeRepository.findByEmployeeCode(employeeCode)
+            .orElseThrow(() -> new EntityNotFoundException("Employee not found: " + employeeCode));
+
+        if (!passwordEncoder.matches(currentPassword, employee.getPasswordHash())) {
+            throw new IllegalArgumentException("Current password is incorrect");
+        }
+
+        employee.setPasswordHash(passwordEncoder.encode(newPassword));
+        employeeRepository.save(employee);
+        log.info("[EmployeeService] Changed password for: {}", employeeCode);
+    }
+
+    @Transactional
     public EmployeeResponse updateEmployee(Integer id, com.coresync.hrms.backend.dto.EmployeeUpdateRequest request) {
         Employee employee = employeeRepository.findById(id)
             .orElseThrow(() -> new EntityNotFoundException("Employee not found: ID " + id));

@@ -29,6 +29,7 @@ public class DatabaseSeeder implements CommandLineRunner {
     private final PasswordEncoder passwordEncoder;
 
     private static final String SUPER_ADMIN_CODE = "LDK-0001";
+    private static final String DEFAULT_SEED_PASSWORD = "Admin@1234";
 
     @Override
     @Transactional
@@ -75,8 +76,11 @@ public class DatabaseSeeder implements CommandLineRunner {
         shift = shiftRepository.save(shift);
 
         // 4. Super Admin Employee
-        String rawPassword  = "Admin@1234";
-        String hashedPassword = passwordEncoder.encode(rawPassword);
+        String seedPassword = System.getenv("APP_SEED_PASSWORD");
+        if (seedPassword == null || seedPassword.isBlank()) {
+            seedPassword = DEFAULT_SEED_PASSWORD;
+        }
+        String hashedPassword = passwordEncoder.encode(seedPassword);
 
         Employee superAdmin = Employee.builder()
             .employeeCode(SUPER_ADMIN_CODE)
@@ -102,7 +106,7 @@ public class DatabaseSeeder implements CommandLineRunner {
         log.info("[Seeder] ✅ SUPER_ADMIN seeded successfully.");
         log.info("[Seeder]    Employee Code : {}", SUPER_ADMIN_CODE);
         log.info("[Seeder]    Email         : admin@coresync.com");
-        log.info("[Seeder]    Password      : {}", rawPassword);
+        log.info("[Seeder]    Password      : ******* (set via APP_SEED_PASSWORD env or default)");
         log.info("[Seeder]    ⚠ Change this password immediately after first login!");
         log.info("═══════════════════════════════════════════════════════");
     }

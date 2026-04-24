@@ -29,6 +29,8 @@ import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
 import com.coresync.hrms.backend.security.CustomUserDetailsService;
 import com.coresync.hrms.backend.security.JwtAuthenticationFilter;
 
+import com.coresync.hrms.backend.security.RateLimitFilter;
+
 import lombok.RequiredArgsConstructor;
 
 @Configuration
@@ -39,6 +41,7 @@ public class SecurityConfig {
 
     private final JwtAuthenticationFilter jwtAuthenticationFilter;
     private final CustomUserDetailsService userDetailsService;
+    private final RateLimitFilter rateLimitFilter;
 
     @Value("${app.cors.allowed-origins}")
     private String allowedOrigins;
@@ -118,6 +121,7 @@ public class SecurityConfig {
                 
                 .anyRequest().authenticated()
             )
+            .addFilterBefore(rateLimitFilter, UsernamePasswordAuthenticationFilter.class)
             .addFilterBefore(jwtAuthenticationFilter, UsernamePasswordAuthenticationFilter.class)
             .exceptionHandling(exception -> exception
                 .authenticationEntryPoint((request, response, authException) -> {

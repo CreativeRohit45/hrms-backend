@@ -59,7 +59,10 @@ public class AuthController {
                 .build());
         } catch (AuthenticationException ex) {
             log.warn("[Auth] Login FAILED for identifier: '{}'", request.getIdentifier());
-            return ResponseEntity.status(401).build();
+            return ResponseEntity.status(401).body(LoginResponse.builder()
+                .error("INVALID_CREDENTIALS")
+                .message("Employee code or password is incorrect.")
+                .build());
         }
     }
 }

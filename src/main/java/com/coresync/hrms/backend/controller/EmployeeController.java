@@ -61,6 +61,13 @@ public class EmployeeController {
         String employeeCode = authentication.getName();
         return ResponseEntity.ok(employeeService.updateMyProfile(employeeCode, request));
     }
+
+    @PutMapping("/me/password")
+    public ResponseEntity<Void> changePassword(Authentication authentication, @Valid @RequestBody com.coresync.hrms.backend.dto.ChangePasswordRequest request) {
+        String employeeCode = authentication.getName();
+        employeeService.changePassword(employeeCode, request.getCurrentPassword(), request.getNewPassword());
+        return ResponseEntity.ok().build();
+    }
     @DeleteMapping("/{id}")
     @PreAuthorize("hasAnyRole('HR_ADMIN', 'SUPER_ADMIN')")
     public ResponseEntity<Void> deleteEmployee(@PathVariable Integer id) {

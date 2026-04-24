@@ -166,6 +166,24 @@ public class LeaveController {
         return ResponseEntity.ok().build();
     }
 
+    @PostMapping("/admin/bulk-grant")
+    @PreAuthorize("hasAnyRole('HR_ADMIN', 'SUPER_ADMIN')")
+    public ResponseEntity<Void> bulkGrantLeaves(
+            @Valid @RequestBody BulkGrantRequest request,
+            Authentication authentication) {
+        Integer adminId = resolveId(authentication);
+        for (Integer employeeId : request.getEmployeeIds()) {
+            leaveService.overrideBalance(
+                employeeId, 
+                request.getLeaveTypeId(), 
+                request.getAmount(), 
+                request.getReason(), 
+                adminId
+            );
+        }
+        return ResponseEntity.ok().build();
+    }
+
     @GetMapping("/admin/balances/{employeeId}")
     @PreAuthorize("hasAnyRole('HR_ADMIN', 'SUPER_ADMIN')")
     public ResponseEntity<List<LeaveBalanceResponse>> getEmployeeBalances(

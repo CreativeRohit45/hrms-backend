@@ -50,11 +50,20 @@ public class LeaveAccrualService {
 
     @Scheduled(cron = "0 0 0 1 * ?")
     public void monthlyAccrualCron() {
+        executeMonthlyAccrual();
+    }
+
+    /**
+     * Shared orchestration for monthly accrual.
+     * Called by both the scheduled cron and the manual trigger endpoint.
+     * NOT @Transactional — each employee is processed in its own transaction.
+     */
+    private void executeMonthlyAccrual() {
         LocalDate today = LocalDate.now();
         int year = today.getYear();
         String monthName = today.getMonth().name();
 
-        log.info("═══ Monthly Leave Accrual Cron started for {} {} ═══", monthName, year);
+        log.info("═══ Monthly Leave Accrual started for {} {} ═══", monthName, year);
 
         List<Employee> activeEmployees = employeeRepository.findByStatus(EmployeeStatus.ACTIVE);
         List<LeaveType> accrualTypes = leaveTypeRepository.findByIsActiveTrue().stream()
@@ -80,7 +89,7 @@ public class LeaveAccrualService {
             }
         }
 
-        log.info("═══ Monthly Leave Accrual Cron completed | Success: {} | Failed: {} ═══",
+        log.info("═══ Monthly Leave Accrual completed | Success: {} | Failed: {} ═══",
             successCount, failCount);
     }
 
@@ -295,7 +304,10 @@ public class LeaveAccrualService {
         return Math.round(value * 2) / 2.0;
     }
 
-    @Transactional
+    /**
+     * Manual trigger for monthly accrual (called from admin API).
+     * Validates idempotency via system settings, then delegates to shared orchestration.
+     */
     public void runManualAccrual() {
         LocalDate today = LocalDate.now();
         String todayStr = today.format(DATE_FORMATTER);
@@ -305,9 +317,15 @@ public class LeaveAccrualService {
             throw new IllegalStateException("Accrual for " + todayStr + " has already been processed.");
         }
 
-        monthlyAccrualCron();
+        // Delegate to shared orchestration (same logic as the cron job)
+        executeMonthlyAccrual();
 
-        // Update last run date
+        // Update last run date — separate transaction so it persists even if some employees failed
+        updateLastRunDate(todayStr, lastRun);
+    }
+
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
+    protected void updateLastRunDate(String todayStr, Optional<SystemSettings> lastRun) {
         SystemSettings settings = lastRun.orElse(SystemSettings.builder()
             .settingKey(LAST_ACCRUAL_RUN_KEY)
             .description("Last date the monthly leave accrual engine was executed.")
@@ -317,11 +335,13 @@ public class LeaveAccrualService {
     }
 
     /**
-     * CMP (Comp-Off) Expiry — Runs every Sunday midnight
+     * CMP (Comp-Off) Expiry — Runs every Sunday midnight.
      * Expires Comp-Off credits older than 90 days using FIFO logic.
+     *
+     * NOT @Transactional: each employee is processed in its own transaction
+     * so one failure doesn't roll back all expirations (Domino Effect prevention).
      */
     @Scheduled(cron = "0 0 0 * * SUN")
-    @Transactional
     public void expireCompOffsJob() {
         LocalDate cutoff = LocalDate.now().minusDays(90);
         log.info("═══ Comp-Off Expiry Job started (Cutoff: {}) ═══", cutoff);
@@ -333,31 +353,43 @@ public class LeaveAccrualService {
         }
 
         List<Employee> activeEmployees = employeeRepository.findByStatus(EmployeeStatus.ACTIVE);
-        int processedCount = 0;
+        int successCount = 0;
+        int failCount = 0;
 
         for (Employee employee : activeEmployees) {
             try {
-                processExpiryForEmployee(employee, cmpType, cutoff);
-                processedCount++;
+                processExpiryForEmployee(employee.getId(), cmpType, cutoff);
+                successCount++;
             } catch (Exception e) {
-                log.error("[CompOffExpiry] Failed for employee {}: {}", employee.getEmployeeCode(), e.getMessage());
+                failCount++;
+                log.error("[CompOffExpiry] Failed for employee {} (ID: {}): {}",
+                    employee.getEmployeeCode(), employee.getId(), e.getMessage());
             }
         }
 
-        log.info("═══ Comp-Off Expiry Job completed | Employees Processed: {} ═══", processedCount);
+        log.info("═══ Comp-Off Expiry Job completed | Success: {} | Failed: {} ═══",
+            successCount, failCount);
     }
 
-    private void processExpiryForEmployee(Employee employee, LeaveType cmpType, LocalDate cutoff) {
+    /**
+     * Process comp-off expiry for a single employee in its own transaction.
+     * Uses REQUIRES_NEW so one employee's failure is isolated.
+     */
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
+    public void processExpiryForEmployee(Integer employeeId, LeaveType cmpType, LocalDate cutoff) {
+        Employee employee = employeeRepository.findById(employeeId).orElse(null);
+        if (employee == null) return;
+
         int currentYear = LocalDate.now().getYear();
         
         LeaveBalance balance = leaveBalanceRepository
-            .findByEmployeeIdAndLeaveTypeIdAndYear(employee.getId(), cmpType.getId(), currentYear)
+            .findByEmployeeIdAndLeaveTypeIdAndYear(employeeId, cmpType.getId(), currentYear)
             .orElse(null);
 
         if (balance == null || balance.getBalance() <= 0) return;
 
         List<LeaveBalanceAudit> history = auditRepository
-            .findByEmployeeIdAndLeaveTypeIdOrderByCreatedAtAsc(employee.getId(), cmpType.getId());
+            .findByEmployeeIdAndLeaveTypeIdOrderByCreatedAtAsc(employeeId, cmpType.getId());
 
         double totalOldCredits = 0;
         double totalDebits = 0;
