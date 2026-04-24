@@ -43,6 +43,9 @@ public interface AttendanceLogRepository extends JpaRepository<AttendanceLog, Lo
 
     List<AttendanceLog> findByEmployeeEmployeeCodeOrderByWorkDateDesc(String employeeCode);
 
+    @EntityGraph(attributePaths = {"employee", "shift", "location"})
+    Page<AttendanceLog> findByWorkDateAndShiftIdOrderByPunchInTimeDesc(LocalDate workDate, Integer shiftId, Pageable pageable);
+
     // Cron Job: Finds open sessions to auto-close
     @Query("SELECT a FROM AttendanceLog a WHERE a.workDate = :date AND a.punchOutTime IS NULL")
     List<AttendanceLog> findOpenSessionsByWorkDate(@Param("date") LocalDate date);
@@ -76,16 +79,40 @@ public interface AttendanceLogRepository extends JpaRepository<AttendanceLog, Lo
         org.springframework.data.domain.Pageable pageable
     );
 
+    @EntityGraph(attributePaths = {"employee", "shift", "location"})
+    @Query("SELECT a FROM AttendanceLog a WHERE a.employee.department.id = :deptId AND a.workDate = :date AND a.shift.id = :shiftId")
+    Page<AttendanceLog> findByEmployeeDepartmentIdAndWorkDateAndShiftId(
+        @Param("deptId") Integer deptId,
+        @Param("date")   LocalDate date,
+        @Param("shiftId") Integer shiftId,
+        org.springframework.data.domain.Pageable pageable
+    );
+
     @Query(value = """
         WITH InboxQueue AS (
             SELECT 'LEAVE' as request_type, id as source_id, employee_id, reason as details, created_at, start_date as reference_date, status 
-            FROM leave_requests WHERE status = 'PENDING'
+            FROM leave_requests 
+            
             UNION ALL
+            
             SELECT 'GATEPASS', id, employee_id, reason, created_at, request_date, status 
-            FROM gatepasses WHERE status = 'PENDING'
+            FROM gatepasses 
+            
             UNION ALL
+            
             SELECT 'CORRECTION', id, employee_id, correction_reason, created_at, work_date, correction_status 
-            FROM attendance_logs WHERE correction_status = 'PENDING'
+            FROM attendance_logs 
+            
+            UNION ALL
+            
+            SELECT 'OVERTIME', id, employee_id, CONCAT('OT Work (', overtime_minutes, ' mins) on ', work_date), created_at, work_date, 
+                CASE 
+                    WHEN is_overtime_approved IS NULL THEN 'PENDING'
+                    WHEN is_overtime_approved = true THEN 'APPROVED'
+                    ELSE 'REJECTED'
+                END as status
+            FROM attendance_logs 
+            WHERE is_overtime = true
         )
         SELECT 
             CONCAT(i.request_type, '-', i.source_id) as id,
@@ -100,20 +127,34 @@ public interface AttendanceLogRepository extends JpaRepository<AttendanceLog, Lo
         FROM InboxQueue i
         INNER JOIN employees e ON i.employee_id = e.id
         WHERE (:deptId IS NULL OR e.department_id = :deptId)
+        AND (:status IS NULL OR i.status = :status)
         ORDER BY i.created_at DESC
         """, 
         countQuery = """
         WITH InboxQueue AS (
-            SELECT employee_id FROM leave_requests WHERE status = 'PENDING'
+            SELECT employee_id, status FROM leave_requests
             UNION ALL
-            SELECT employee_id FROM gatepasses WHERE status = 'PENDING'
+            SELECT employee_id, status FROM gatepasses
             UNION ALL
-            SELECT employee_id FROM attendance_logs WHERE correction_status = 'PENDING'
+            SELECT employee_id, correction_status as status FROM attendance_logs
+            UNION ALL
+            SELECT employee_id, 
+                CASE 
+                    WHEN is_overtime_approved IS NULL THEN 'PENDING'
+                    WHEN is_overtime_approved = true THEN 'APPROVED'
+                    ELSE 'REJECTED'
+                END as status
+            FROM attendance_logs 
+            WHERE is_overtime = true
         )
         SELECT count(*) FROM InboxQueue i
         INNER JOIN employees e ON i.employee_id = e.id
         WHERE (:deptId IS NULL OR e.department_id = :deptId)
+        AND (:status IS NULL OR i.status = :status)
         """, 
         nativeQuery = true)
-    Page<UnifiedInboxProjection> getUnifiedInbox(@Param("deptId") Integer deptId, Pageable pageable);
+    Page<UnifiedInboxProjection> getUnifiedInbox(
+        @Param("deptId") Integer deptId, 
+        @Param("status") String status, 
+        Pageable pageable);
 }

@@ -318,7 +318,7 @@ public class LeaveAccrualService {
 
     /**
      * CMP (Comp-Off) Expiry — Runs every Sunday midnight
-     * Expires Comp-Off credits older than 90 days.
+     * Expires Comp-Off credits older than 90 days using FIFO logic.
      */
     @Scheduled(cron = "0 0 0 * * SUN")
     @Transactional
@@ -326,10 +326,74 @@ public class LeaveAccrualService {
         LocalDate cutoff = LocalDate.now().minusDays(90);
         log.info("═══ Comp-Off Expiry Job started (Cutoff: {}) ═══", cutoff);
 
-        // Implementation detail: Typically CMP leaves are tracked in a way that we can see 
-        // when they were earned. In our audit ledger, we look for COMP_OFF_CREDIT.
-        // For simplicity here, we total up the CMP balances and expire portions 
-        // (but usually, enterprise HRMS tracks specific comp-off buckets).
-        // For this MVP fix, we'll log the expiration requirement.
+        LeaveType cmpType = leaveTypeRepository.findByCode("CMP").orElse(null);
+        if (cmpType == null) {
+            log.warn("Leave type 'CMP' not found. Skipping expiry job.");
+            return;
+        }
+
+        List<Employee> activeEmployees = employeeRepository.findByStatus(EmployeeStatus.ACTIVE);
+        int processedCount = 0;
+
+        for (Employee employee : activeEmployees) {
+            try {
+                processExpiryForEmployee(employee, cmpType, cutoff);
+                processedCount++;
+            } catch (Exception e) {
+                log.error("[CompOffExpiry] Failed for employee {}: {}", employee.getEmployeeCode(), e.getMessage());
+            }
+        }
+
+        log.info("═══ Comp-Off Expiry Job completed | Employees Processed: {} ═══", processedCount);
+    }
+
+    private void processExpiryForEmployee(Employee employee, LeaveType cmpType, LocalDate cutoff) {
+        int currentYear = LocalDate.now().getYear();
+        
+        LeaveBalance balance = leaveBalanceRepository
+            .findByEmployeeIdAndLeaveTypeIdAndYear(employee.getId(), cmpType.getId(), currentYear)
+            .orElse(null);
+
+        if (balance == null || balance.getBalance() <= 0) return;
+
+        List<LeaveBalanceAudit> history = auditRepository
+            .findByEmployeeIdAndLeaveTypeIdOrderByCreatedAtAsc(employee.getId(), cmpType.getId());
+
+        double totalOldCredits = 0;
+        double totalDebits = 0;
+        double totalPreviousExpirations = 0;
+
+        for (LeaveBalanceAudit audit : history) {
+            if (audit.getTransactionType() == LeaveTransactionType.EXPIRY) {
+                totalPreviousExpirations += Math.abs(audit.getAmount());
+            } else if (audit.getAmount() > 0) {
+                if (audit.getCreatedAt().toLocalDate().isBefore(cutoff)) {
+                    totalOldCredits += audit.getAmount();
+                }
+            } else {
+                totalDebits += Math.abs(audit.getAmount());
+            }
+        }
+
+        double potentialExpiry = totalOldCredits - totalDebits - totalPreviousExpirations;
+        double amountToActuallyExpire = Math.max(0, Math.min(balance.getBalance(), potentialExpiry));
+
+        if (amountToActuallyExpire > 0) {
+            balance.setBalance(balance.getBalance() - amountToActuallyExpire);
+            leaveBalanceRepository.save(balance);
+
+            LeaveBalanceAudit expiryAudit = LeaveBalanceAudit.builder()
+                .employee(employee)
+                .leaveType(cmpType)
+                .year(currentYear)
+                .transactionType(LeaveTransactionType.EXPIRY)
+                .amount(-amountToActuallyExpire)
+                .balanceAfter(balance.getBalance())
+                .reason("Comp-Off expiry (FIFO) — Credits older than 90 days (" + cutoff + ")")
+                .performedByUserId(null)
+                .build();
+            auditRepository.save(expiryAudit);
+            log.info("[CompOffExpiry] Expired {} days for employee {}", amountToActuallyExpire, employee.getEmployeeCode());
+        }
     }
 }

@@ -8,6 +8,7 @@ import lombok.Data;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
+import java.util.List;
 
 @Data
 public class EmployeeCreateRequest {
@@ -58,4 +59,6 @@ public class EmployeeCreateRequest {
     private BigDecimal baseSalary;
     private BigDecimal hraPercentage;
     private BigDecimal pfPercentage;
+
+    private List<InitialLeaveBalanceDTO> initialBalances;
 }

@@ -81,12 +81,9 @@ public class EmployeeService {
         log.info("[EmployeeService] Created employee: {} | Code: {} | Role: {}", saved.getFullName(), saved.getEmployeeCode(), saved.getRole());
 
         // Initialize per-type leave balances for the new employee
+        // Strictly atomic: If this fails, the employee creation rolls back
         log.info("[EmployeeService] Triggering leave balance initialization for {}", saved.getEmployeeCode());
-        try {
-           leaveService.initializeBalancesForNewEmployee(saved);
-        } catch (Exception e) {
-           log.error("Failed to initialize leave balances: {}", e.getMessage());
-        }
+        leaveService.initializeBalancesForNewEmployee(saved, request.getInitialBalances());
 
         return toResponse(saved);
     }

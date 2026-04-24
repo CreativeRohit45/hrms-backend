@@ -14,4 +14,6 @@ public interface LeaveBalanceAuditRepository extends JpaRepository<LeaveBalanceA
     );
 
     List<LeaveBalanceAudit> findByReferenceLeaveIdOrderByCreatedAtAsc(Integer leaveRequestId);
+
+    List<LeaveBalanceAudit> findByEmployeeIdAndLeaveTypeIdOrderByCreatedAtAsc(Integer empId, Integer typeId);
 }

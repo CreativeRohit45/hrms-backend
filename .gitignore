@@ -31,3 +31,16 @@ build/
 
 ### VS Code ###
 .vscode/
+# Added by code-review-graph
+.code-review-graph/
+.claude/
+.code-review-graphignore
+.cursor/
+.cursorrules
+.kiro/
+.mcp.json
+.opencode.json
+.windsurfrules
+AGENTS.md
+CLAUDE.md
+GEMINI.md

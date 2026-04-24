@@ -126,15 +126,14 @@ public class LeaveController {
     //  HR ADMIN ENDPOINTS
     // ═══════════════════════════════════════════════════════════════════
 
-    @PutMapping("/admin/{id}/revoke")
-    @PreAuthorize("hasAnyRole('HR_ADMIN', 'SUPER_ADMIN')")
+    @PutMapping("/{id}/revoke")
     public ResponseEntity<LeaveResponse> revokeLeave(
             @PathVariable Integer id,
-            @RequestBody Map<String, String> body,
+            @RequestBody(required = false) Map<String, String> body,
             Authentication authentication) {
-        Integer adminId = resolveId(authentication);
-        String reason = body.getOrDefault("reason", "");
-        return ResponseEntity.ok(leaveService.revokeLeave(id, adminId, reason));
+        Integer requesterId = resolveId(authentication);
+        String reason = (body != null) ? body.getOrDefault("reason", "") : "Revoked by user";
+        return ResponseEntity.ok(leaveService.revokeLeave(id, requesterId, reason));
     }
 
     @PostMapping("/admin/grant")

@@ -632,6 +632,14 @@ public class AttendanceService {
         return attendanceLogRepository.save(logEntity);
     }
 
+    @Transactional
+    public AttendanceLog rejectOvertime(Long logId) {
+        AttendanceLog logEntity = attendanceLogRepository.findById(logId)
+            .orElseThrow(() -> new EntityNotFoundException("Log not found"));
+        logEntity.setIsOvertimeApproved(false);
+        return attendanceLogRepository.save(logEntity);
+    }
+
     @Transactional(readOnly = true)
     public List<AttendanceLog> getPendingCorrections(Integer managerId) {
         Employee manager = employeeRepository.findById(managerId)
@@ -645,16 +653,25 @@ public class AttendanceService {
     }
 
     @Transactional(readOnly = true)
-    public Page<AttendanceLog> getDailyRoster(Integer managerId, LocalDate date, Pageable pageable) {
+    public Page<AttendanceLog> getDailyRoster(Integer managerId, LocalDate date, Integer shiftId, Pageable pageable) {
         Employee manager = employeeRepository.findById(managerId)
             .orElseThrow(() -> new EntityNotFoundException("Manager not found"));
 
         Page<AttendanceLog> rosterPage;
         if (manager.getRole() == EmployeeRole.DEPARTMENT_MANAGER) {
-            rosterPage = attendanceLogRepository.findByEmployeeDepartmentIdAndWorkDate(
-                manager.getDepartment().getId(), date, pageable);
+            if (shiftId != null) {
+                rosterPage = attendanceLogRepository.findByEmployeeDepartmentIdAndWorkDateAndShiftId(
+                    manager.getDepartment().getId(), date, shiftId, pageable);
+            } else {
+                rosterPage = attendanceLogRepository.findByEmployeeDepartmentIdAndWorkDate(
+                    manager.getDepartment().getId(), date, pageable);
+            }
         } else {
-            rosterPage = attendanceLogRepository.findByWorkDateOrderByPunchInTimeDesc(date, pageable);
+            if (shiftId != null) {
+                rosterPage = attendanceLogRepository.findByWorkDateAndShiftIdOrderByPunchInTimeDesc(date, shiftId, pageable);
+            } else {
+                rosterPage = attendanceLogRepository.findByWorkDateOrderByPunchInTimeDesc(date, pageable);
+            }
         }
 
         // Apply auto-healing to the results in the page
@@ -664,7 +681,7 @@ public class AttendanceService {
     }
 
     @Transactional(readOnly = true)
-    public Page<UnifiedInboxProjection> getUnifiedInbox(Integer managerId, Pageable pageable) {
+    public Page<UnifiedInboxProjection> getUnifiedInbox(Integer managerId, String status, Pageable pageable) {
         Employee manager = employeeRepository.findById(managerId)
             .orElseThrow(() -> new EntityNotFoundException("Manager not found"));
 
@@ -672,6 +689,6 @@ public class AttendanceService {
             ? manager.getDepartment().getId() 
             : null;
 
-        return attendanceLogRepository.getUnifiedInbox(deptId, pageable);
+        return attendanceLogRepository.getUnifiedInbox(deptId, status, pageable);
     }
 }

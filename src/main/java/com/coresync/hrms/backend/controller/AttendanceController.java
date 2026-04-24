@@ -90,10 +90,11 @@ public class AttendanceController {
     @GetMapping({"/inbox", "/unified-inbox"})
     @PreAuthorize("hasAnyRole('DEPARTMENT_MANAGER', 'HR_ADMIN', 'SUPER_ADMIN')")
     public ResponseEntity<Page<UnifiedInboxProjection>> getUnifiedInbox(
+            @RequestParam(required = false) String status,
             Pageable pageable,
             Authentication authentication) {
         Integer managerId = resolveId(authentication);
-        return ResponseEntity.ok(attendanceService.getUnifiedInbox(managerId, pageable));
+        return ResponseEntity.ok(attendanceService.getUnifiedInbox(managerId, status, pageable));
     }
 
     @GetMapping({"/pending-corrections", "/corrections/pending"})
@@ -124,15 +125,22 @@ public class AttendanceController {
         return ResponseEntity.ok(toResponse(attendanceService.approveOvertime(logId)));
     }
 
+    @PutMapping("/{logId}/reject-overtime")
+    @PreAuthorize("hasAnyRole('DEPARTMENT_MANAGER', 'HR_ADMIN', 'SUPER_ADMIN')")
+    public ResponseEntity<AttendanceLogResponse> rejectOvertime(@PathVariable Long logId) {
+        return ResponseEntity.ok(toResponse(attendanceService.rejectOvertime(logId)));
+    }
+
     // --- FEATURE 3: SCOPED ROSTER ---
     @GetMapping("/roster")
     @PreAuthorize("hasAnyRole('DEPARTMENT_MANAGER', 'HR_ADMIN', 'SUPER_ADMIN')")
     public ResponseEntity<Page<AttendanceLogResponse>> getDailyRoster(
             @RequestParam("date") @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate date,
+            @RequestParam(required = false) Integer shiftId,
             Pageable pageable,
             Authentication authentication) {
         Integer managerId = resolveId(authentication);
-        return ResponseEntity.ok(attendanceService.getDailyRoster(managerId, date, pageable)
+        return ResponseEntity.ok(attendanceService.getDailyRoster(managerId, date, shiftId, pageable)
                 .map(this::toResponse));
     }
 

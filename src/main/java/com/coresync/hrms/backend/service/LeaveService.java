@@ -268,7 +268,7 @@ public class LeaveService {
     }
 
     @Transactional
-    public LeaveResponse revokeLeave(Integer leaveId, Integer adminId, String reason) {
+    public LeaveResponse revokeLeave(Integer leaveId, Integer requesterId, String reason) {
         LeaveRequest leave = leaveRequestRepository.findById(leaveId)
             .orElseThrow(() -> new EntityNotFoundException("Leave request not found"));
 
@@ -276,9 +276,24 @@ public class LeaveService {
             throw new IllegalStateException("Only APPROVED leave requests can be revoked. Current status: " + leave.getStatus());
         }
 
-        refundBalance(leave, "Leave REVOKED by admin ID " + adminId + ": " + reason);
+        Employee requester = employeeRepository.findById(requesterId)
+            .orElseThrow(() -> new EntityNotFoundException("Requester not found"));
+
+        boolean isAdmin = requester.getRole() == EmployeeRole.HR_ADMIN || requester.getRole() == EmployeeRole.SUPER_ADMIN;
+        boolean isOwner = leave.getEmployee().getId().equals(requesterId);
+
+        if (!isAdmin && !isOwner) {
+            throw new IllegalArgumentException("Unauthorized: You can only revoke your own leave or be an Admin.");
+        }
+
+        // --- Trap 1 Fix: The Time-Machine Guard ---
+        if (!isAdmin && leave.getStartDate().isBefore(LocalDate.now())) {
+            throw new IllegalStateException("Employees cannot revoke leaves that have already started or occurred. Contact HR.");
+        }
+
+        refundBalance(leave, "Leave REVOKED by " + (isAdmin ? "Admin" : "Employee") + ": " + reason);
         leave.setStatus(LeaveStatus.REVOKED);
-        leave.setActionByUserId(adminId);
+        leave.setActionByUserId(requesterId);
         leave.setActionAt(LocalDateTime.now());
         leave.setRejectionReason(reason);
 
@@ -287,7 +302,7 @@ public class LeaveService {
         // Reverse the attendance logs if it was already approved/synced
         attendanceService.syncLeaveLogs(leave.getEmployee(), leave.getStartDate(), leave.getEndDate());
 
-        log.info("[LeaveService] Leave REVOKED | ID: {} | By Admin: {}", leaveId, adminId);
+        log.info("[LeaveService] Leave REVOKED | ID: {} | By User: {}", leaveId, requesterId);
         return toResponse(saved);
     }
 
@@ -410,10 +425,21 @@ public class LeaveService {
      */
     @Transactional
     public void initializeBalancesForNewEmployee(Employee employee) {
+        initializeBalancesForNewEmployee(employee, null);
+    }
+
+    public void initializeBalancesForNewEmployee(Employee employee, List<InitialLeaveBalanceDTO> overrides) {
         int year = LocalDate.now().getYear();
         int monthsRemaining = 12 - LocalDate.now().getMonthValue() + 1;
         
         List<LeaveType> types = leaveTypeRepository.findByIsActiveTrue();
+        Map<Integer, Double> overrideMap = new HashMap<>();
+        if (overrides != null) {
+            for (InitialLeaveBalanceDTO o : overrides) {
+                overrideMap.put(o.getLeaveTypeId(), o.getBalance());
+            }
+        }
+
         for (LeaveType type : types) {
             // Basic gender/eligibility check
             if (type.getAllowedGenders() != null && !type.getAllowedGenders().isBlank()) {
@@ -422,12 +448,22 @@ public class LeaveService {
                 }
             }
 
-            double quota = (type.getMonthlyAccrualRate() > 0) 
-                ? type.getMonthlyAccrualRate() * monthsRemaining
-                : (type.getDefaultAnnualQuota() / 12.0) * monthsRemaining;
+            double quota;
+            String reason;
+
+            if (overrideMap.containsKey(type.getId())) {
+                quota = overrideMap.get(type.getId());
+                reason = "Manual initial allocation (Negotiated/Overridden)";
+            } else {
+                quota = (type.getMonthlyAccrualRate() > 0) 
+                    ? type.getMonthlyAccrualRate() * monthsRemaining
+                    : (type.getDefaultAnnualQuota() / 12.0) * monthsRemaining;
+                
+                quota = Math.round(quota * 2) / 2.0;
+                reason = "Pro-rated initial allocation (" + monthsRemaining + " months)";
+            }
             
-            quota = Math.round(quota * 2) / 2.0;
-            if (quota <= 0) continue;
+            if (quota <= 0 && !overrideMap.containsKey(type.getId())) continue;
 
             LeaveBalance bal = LeaveBalance.builder()
                 .employee(employee).leaveType(type).year(year)
@@ -435,7 +471,7 @@ public class LeaveService {
             leaveBalanceRepository.save(bal);
 
             writeAudit(employee, type, year, LeaveTransactionType.ACCRUAL,
-                quota, quota, "Pro-rated initial allocation (" + monthsRemaining + " months)", null, null);
+                quota, quota, reason, null, null);
         }
     }
 
