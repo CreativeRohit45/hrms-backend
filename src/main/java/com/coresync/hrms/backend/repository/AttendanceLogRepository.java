@@ -15,8 +15,8 @@ import java.util.Set;
 
 public interface AttendanceLogRepository extends JpaRepository<AttendanceLog, Long> {
 
-    @Query("SELECT a FROM AttendanceLog a WHERE a.employee.id = :employeeId AND a.punchOutTime IS NULL")
-    Optional<AttendanceLog> findOpenSession(@Param("employeeId") Integer employeeId);
+    @Query("SELECT a FROM AttendanceLog a WHERE a.employee.id = :employeeId AND a.punchOutTime IS NULL ORDER BY a.workDate DESC, a.id DESC")
+    List<AttendanceLog> findOpenSession(@Param("employeeId") Integer employeeId);
 
     @Query("SELECT a FROM AttendanceLog a WHERE a.employee.id = :employeeId " +
            "AND a.workDate BETWEEN :startDate AND :endDate " +

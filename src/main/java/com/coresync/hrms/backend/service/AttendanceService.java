@@ -63,11 +63,32 @@ public class AttendanceService {
         LocalDateTime now = LocalDateTime.now();
         LocalDate todayIst = now.toLocalDate();
 
-        Optional<AttendanceLog> openSession = attendanceLogRepository.findOpenSession(employee.getId());
-        if (openSession.isPresent()) {
-            log.warn("Punch-in BLOCKED for employee {}: open session ID {}",
-                employee.getEmployeeCode(), openSession.get().getId());
-            throw new OpenSessionException(openSession.get().getId());
+        List<AttendanceLog> openSessions = attendanceLogRepository.findOpenSession(employee.getId());
+        
+        // AUTO-HEAL: If there are open sessions from PREVIOUS days, auto-close them now
+        for (AttendanceLog staleLog : openSessions) {
+            if (staleLog.getWorkDate().isBefore(todayIst)) {
+                log.warn("Auto-closing STALE session ID {} for employee {} during new punch-in", 
+                    staleLog.getId(), employee.getEmployeeCode());
+                staleLog.setPunchOutTime(staleLog.getWorkDate().atTime(23, 59, 59));
+                staleLog.setCalculatedPayableMinutes(0);
+                staleLog.setAttendanceStatus(AttendanceStatus.ABSENT); // Or LATE/HALF_DAY based on policy
+                staleLog.setCorrectionReason("System Auto-Closed: Missing Punch Out (Healed at next Punch-In)");
+                attendanceLogRepository.save(staleLog);
+            }
+        }
+
+        // Re-check for open sessions for TODAY
+        boolean hasOpenSessionToday = attendanceLogRepository.findOpenSession(employee.getId()).stream()
+            .anyMatch(l -> l.getWorkDate().equals(todayIst));
+
+        if (hasOpenSessionToday) {
+            AttendanceLog todayOpen = openSessions.stream()
+                .filter(l -> l.getWorkDate().equals(todayIst))
+                .findFirst().get();
+            log.warn("Punch-in BLOCKED for employee {}: open session ID {} already exists for today",
+                employee.getEmployeeCode(), todayOpen.getId());
+            throw new OpenSessionException(todayOpen.getId());
         }
 
         boolean alreadyCompletedToday = attendanceLogRepository
@@ -110,7 +131,8 @@ public class AttendanceService {
     @Transactional
     public AttendanceLog punchOut(Integer employeeId, Double latitude, Double longitude) {
 
-        AttendanceLog openLog = attendanceLogRepository.findOpenSession(employeeId)
+        AttendanceLog openLog = attendanceLogRepository.findOpenSession(employeeId).stream()
+            .findFirst()
             .orElseThrow(() -> new IllegalStateException(
                 "No open punch-in session found for employee: " + employeeId));
 

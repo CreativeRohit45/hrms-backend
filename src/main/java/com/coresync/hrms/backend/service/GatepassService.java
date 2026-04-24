@@ -37,7 +37,7 @@ public class GatepassService {
         Employee employee = findEmployee(employeeId);
         
         // --- SECURITY GUARDRAIL: Must be punched in ---
-        attendanceLogRepository.findOpenSession(employeeId)
+        attendanceLogRepository.findOpenSession(employeeId).stream().findFirst()
             .orElseThrow(() -> new IllegalStateException("Cannot request gatepass: No active punch-in session found for today."));
 
         // --- NIGHT SHIFT AWARE VALIDATION ---
@@ -156,7 +156,7 @@ public class GatepassService {
         }
 
         // Capture current log
-        AttendanceLog activeLog = attendanceLogRepository.findOpenSession(employeeId)
+        AttendanceLog activeLog = attendanceLogRepository.findOpenSession(employeeId).stream().findFirst()
             .orElseThrow(() -> new IllegalStateException("You must be clocked-in for an active shift to mark a gatepass exit."));
 
         if (gatepass.getActualOutTime() != null) {

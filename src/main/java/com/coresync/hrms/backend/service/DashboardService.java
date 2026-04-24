@@ -143,7 +143,7 @@ public class DashboardService {
             .collect(Collectors.toList());
 
         // 3. Current Session
-        AttendanceLog openSession = attendanceLogRepository.findOpenSession(employee.getId()).orElse(null);
+        AttendanceLog openSession = attendanceLogRepository.findOpenSession(employee.getId()).stream().findFirst().orElse(null);
         DashboardStatsDTO.AttendanceSessionDTO sessionDTO = null;
         if (openSession != null) {
             sessionDTO = DashboardStatsDTO.AttendanceSessionDTO.builder()
