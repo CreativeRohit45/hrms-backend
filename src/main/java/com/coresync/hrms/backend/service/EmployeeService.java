@@ -89,7 +89,22 @@ public class EmployeeService {
     }
 
     @Transactional(readOnly = true)
-    public Page<EmployeeResponse> getAllEmployees(Pageable pageable) {
+    public Page<EmployeeResponse> getAllEmployees(String requesterCode, Integer deptIdFilter, Pageable pageable) {
+        Employee requester = employeeRepository.findByEmployeeCode(requesterCode)
+            .orElseThrow(() -> new EntityNotFoundException("Requester not found: " + requesterCode));
+
+        if (requester.getRole() == com.coresync.hrms.backend.enums.EmployeeRole.DEPARTMENT_MANAGER) {
+            // Strict scoping: Manager only sees their department
+            return employeeRepository.findByDepartmentId(requester.getDepartment().getId(), pageable)
+                .map(this::toResponse);
+        }
+
+        // HR or Super Admin: Apply optional department filter
+        if (deptIdFilter != null) {
+            return employeeRepository.findByDepartmentId(deptIdFilter, pageable)
+                .map(this::toResponse);
+        }
+
         return employeeRepository.findAll(pageable).map(this::toResponse);
     }
 

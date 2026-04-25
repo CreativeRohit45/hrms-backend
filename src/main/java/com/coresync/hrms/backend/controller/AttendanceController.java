@@ -107,28 +107,32 @@ public class AttendanceController {
 
     @PutMapping("/corrections/{logId}/approve")
     @PreAuthorize("hasAnyRole('DEPARTMENT_MANAGER', 'HR_ADMIN', 'SUPER_ADMIN')")
-    public ResponseEntity<AttendanceLogResponse> approveCorrection(@PathVariable Long logId) {
-        return ResponseEntity.ok(toResponse(attendanceService.approveCorrection(logId)));
+    public ResponseEntity<AttendanceLogResponse> approveCorrection(@PathVariable Long logId, Authentication authentication) {
+        Integer approverId = resolveId(authentication);
+        return ResponseEntity.ok(toResponse(attendanceService.approveCorrection(logId, approverId)));
     }
 
     @PutMapping("/corrections/{logId}/reject")
     @PreAuthorize("hasAnyRole('DEPARTMENT_MANAGER', 'HR_ADMIN', 'SUPER_ADMIN')")
     public ResponseEntity<AttendanceLogResponse> rejectCorrection(
-            @PathVariable Long logId, @RequestBody String reason) {
-        return ResponseEntity.ok(toResponse(attendanceService.rejectCorrection(logId, reason)));
+            @PathVariable Long logId, @RequestBody String reason, Authentication authentication) {
+        Integer approverId = resolveId(authentication);
+        return ResponseEntity.ok(toResponse(attendanceService.rejectCorrection(logId, reason, approverId)));
     }
 
     // --- FEATURE 2: OVERTIME ---
     @PutMapping("/{logId}/approve-overtime")
     @PreAuthorize("hasAnyRole('DEPARTMENT_MANAGER', 'HR_ADMIN', 'SUPER_ADMIN')")
-    public ResponseEntity<AttendanceLogResponse> approveOvertime(@PathVariable Long logId) {
-        return ResponseEntity.ok(toResponse(attendanceService.approveOvertime(logId)));
+    public ResponseEntity<AttendanceLogResponse> approveOvertime(@PathVariable Long logId, Authentication authentication) {
+        Integer approverId = resolveId(authentication);
+        return ResponseEntity.ok(toResponse(attendanceService.approveOvertime(logId, approverId)));
     }
 
     @PutMapping("/{logId}/reject-overtime")
     @PreAuthorize("hasAnyRole('DEPARTMENT_MANAGER', 'HR_ADMIN', 'SUPER_ADMIN')")
-    public ResponseEntity<AttendanceLogResponse> rejectOvertime(@PathVariable Long logId) {
-        return ResponseEntity.ok(toResponse(attendanceService.rejectOvertime(logId)));
+    public ResponseEntity<AttendanceLogResponse> rejectOvertime(@PathVariable Long logId, Authentication authentication) {
+        Integer approverId = resolveId(authentication);
+        return ResponseEntity.ok(toResponse(attendanceService.rejectOvertime(logId, approverId)));
     }
 
     // --- FEATURE 3: SCOPED ROSTER ---

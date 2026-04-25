@@ -196,6 +196,10 @@ public class LeaveService {
         LeaveRequest leave = findPendingLeave(leaveId);
         validateAdminExists(adminId);
 
+        if (leave.getEmployee().getId().equals(adminId)) {
+            throw new IllegalStateException("Self-approval is strictly prohibited.");
+        }
+
         leave.setStatus(LeaveStatus.APPROVED);
         leave.setActionByUserId(adminId);
         leave.setActionAt(LocalDateTime.now());
@@ -217,6 +221,10 @@ public class LeaveService {
 
         LeaveRequest leave = findPendingLeave(leaveId);
         validateAdminExists(adminId);
+
+        if (leave.getEmployee().getId().equals(adminId)) {
+            throw new IllegalStateException("Self-approval is strictly prohibited.");
+        }
 
         // ESCROW REFUND
         refundBalance(leave, "Leave rejected by admin ID " + adminId);
@@ -564,10 +572,14 @@ public class LeaveService {
             .orElseThrow(() -> new EntityNotFoundException("Manager not found"));
             
         if (manager.getRole() == EmployeeRole.DEPARTMENT_MANAGER) {
-            return leaveRequestRepository.findByStatusAndEmployeeDepartmentId(
-                LeaveStatus.PENDING, manager.getDepartment().getId())
+            return leaveRequestRepository.findByStatusAndEmployeeDepartmentIdAndEmployeeIdNot(
+                LeaveStatus.PENDING, manager.getDepartment().getId(), managerId)
+                .stream().map(this::toResponse).toList();
+        } else if (manager.getRole() == EmployeeRole.HR_ADMIN) {
+            return leaveRequestRepository.findByStatusAndEmployeeIdNot(LeaveStatus.PENDING, managerId)
                 .stream().map(this::toResponse).toList();
         }
+        
         return leaveRequestRepository.findByStatusOrderByCreatedAtDesc(LeaveStatus.PENDING)
             .stream().map(this::toResponse).toList();
     }

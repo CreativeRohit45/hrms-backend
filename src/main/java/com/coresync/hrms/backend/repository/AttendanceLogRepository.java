@@ -63,10 +63,17 @@ public interface AttendanceLogRepository extends JpaRepository<AttendanceLog, Lo
         @Param("statuses") List<com.coresync.hrms.backend.enums.AttendanceStatus> statuses
     );
 
-    @Query("SELECT a FROM AttendanceLog a WHERE a.correctionStatus = :status AND a.employee.department.id = :deptId")
-    List<AttendanceLog> findByCorrectionStatusAndEmployeeDepartmentId(
+    @Query("SELECT a FROM AttendanceLog a WHERE a.correctionStatus = :status AND a.employee.department.id = :deptId AND a.employee.id <> :excludeEmployeeId")
+    List<AttendanceLog> findByCorrectionStatusAndEmployeeDepartmentIdAndEmployeeIdNot(
         @Param("status") com.coresync.hrms.backend.enums.CorrectionStatus status,
-        @Param("deptId") Integer deptId
+        @Param("deptId") Integer deptId,
+        @Param("excludeEmployeeId") Integer excludeEmployeeId
+    );
+
+    @Query("SELECT a FROM AttendanceLog a WHERE a.correctionStatus = :status AND a.employee.id <> :excludeEmployeeId")
+    List<AttendanceLog> findByCorrectionStatusAndEmployeeIdNot(
+        @Param("status") com.coresync.hrms.backend.enums.CorrectionStatus status,
+        @Param("excludeEmployeeId") Integer excludeEmployeeId
     );
 
     List<AttendanceLog> findByCorrectionStatus(com.coresync.hrms.backend.enums.CorrectionStatus status);
@@ -102,6 +109,7 @@ public interface AttendanceLogRepository extends JpaRepository<AttendanceLog, Lo
             
             SELECT 'CORRECTION', id, employee_id, correction_reason, created_at, work_date, correction_status 
             FROM attendance_logs 
+            WHERE correction_status != 'NONE'
             
             UNION ALL
             
@@ -128,6 +136,7 @@ public interface AttendanceLogRepository extends JpaRepository<AttendanceLog, Lo
         INNER JOIN employees e ON i.employee_id = e.id
         WHERE (:deptId IS NULL OR e.department_id = :deptId)
         AND (:status IS NULL OR i.status = :status)
+        AND (:excludeEmpId IS NULL OR e.id != :excludeEmpId)
         ORDER BY i.created_at DESC
         """, 
         countQuery = """
@@ -136,7 +145,7 @@ public interface AttendanceLogRepository extends JpaRepository<AttendanceLog, Lo
             UNION ALL
             SELECT employee_id, status FROM gatepasses
             UNION ALL
-            SELECT employee_id, correction_status as status FROM attendance_logs
+            SELECT employee_id, correction_status as status FROM attendance_logs WHERE correction_status != 'NONE'
             UNION ALL
             SELECT employee_id, 
                 CASE 
@@ -151,10 +160,12 @@ public interface AttendanceLogRepository extends JpaRepository<AttendanceLog, Lo
         INNER JOIN employees e ON i.employee_id = e.id
         WHERE (:deptId IS NULL OR e.department_id = :deptId)
         AND (:status IS NULL OR i.status = :status)
+        AND (:excludeEmpId IS NULL OR e.id != :excludeEmpId)
         """, 
         nativeQuery = true)
     Page<UnifiedInboxProjection> getUnifiedInbox(
         @Param("deptId") Integer deptId, 
         @Param("status") String status, 
+        @Param("excludeEmpId") Integer excludeEmpId,
         Pageable pageable);
 }

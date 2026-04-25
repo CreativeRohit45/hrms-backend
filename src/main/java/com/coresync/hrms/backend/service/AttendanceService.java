@@ -556,9 +556,13 @@ public class AttendanceService {
     }
 
     @Transactional
-    public AttendanceLog approveCorrection(Long logId) {
+    public AttendanceLog approveCorrection(Long logId, Integer approverId) {
         AttendanceLog logEntity = attendanceLogRepository.findById(logId)
             .orElseThrow(() -> new EntityNotFoundException("Log not found"));
+
+        if (logEntity.getEmployee().getId().equals(approverId)) {
+            throw new IllegalStateException("Self-approval is strictly prohibited.");
+        }
 
         // Overwrite times
         logEntity.setPunchInTime(logEntity.getRequestedPunchInTime());
@@ -616,26 +620,41 @@ public class AttendanceService {
     }
 
     @Transactional
-    public AttendanceLog rejectCorrection(Long logId, String reason) {
+    public AttendanceLog rejectCorrection(Long logId, String reason, Integer approverId) {
         AttendanceLog logEntity = attendanceLogRepository.findById(logId)
             .orElseThrow(() -> new EntityNotFoundException("Log not found"));
+
+        if (logEntity.getEmployee().getId().equals(approverId)) {
+            throw new IllegalStateException("Self-approval is strictly prohibited.");
+        }
+
         logEntity.setCorrectionStatus(CorrectionStatus.REJECTED);
         logEntity.setCorrectionReason("Rejected: " + reason);
         return attendanceLogRepository.save(logEntity);
     }
 
     @Transactional
-    public AttendanceLog approveOvertime(Long logId) {
+    public AttendanceLog approveOvertime(Long logId, Integer approverId) {
         AttendanceLog logEntity = attendanceLogRepository.findById(logId)
             .orElseThrow(() -> new EntityNotFoundException("Log not found"));
+
+        if (logEntity.getEmployee().getId().equals(approverId)) {
+            throw new IllegalStateException("Self-approval is strictly prohibited.");
+        }
+
         logEntity.setIsOvertimeApproved(true);
         return attendanceLogRepository.save(logEntity);
     }
 
     @Transactional
-    public AttendanceLog rejectOvertime(Long logId) {
+    public AttendanceLog rejectOvertime(Long logId, Integer approverId) {
         AttendanceLog logEntity = attendanceLogRepository.findById(logId)
             .orElseThrow(() -> new EntityNotFoundException("Log not found"));
+
+        if (logEntity.getEmployee().getId().equals(approverId)) {
+            throw new IllegalStateException("Self-approval is strictly prohibited.");
+        }
+
         logEntity.setIsOvertimeApproved(false);
         return attendanceLogRepository.save(logEntity);
     }
@@ -646,9 +665,12 @@ public class AttendanceService {
             .orElseThrow(() -> new EntityNotFoundException("Manager not found"));
             
         if (manager.getRole() == EmployeeRole.DEPARTMENT_MANAGER) {
-            return attendanceLogRepository.findByCorrectionStatusAndEmployeeDepartmentId(
-                CorrectionStatus.PENDING, manager.getDepartment().getId());
+            return attendanceLogRepository.findByCorrectionStatusAndEmployeeDepartmentIdAndEmployeeIdNot(
+                CorrectionStatus.PENDING, manager.getDepartment().getId(), managerId);
+        } else if (manager.getRole() == EmployeeRole.HR_ADMIN) {
+            return attendanceLogRepository.findByCorrectionStatusAndEmployeeIdNot(CorrectionStatus.PENDING, managerId);
         }
+        
         return attendanceLogRepository.findByCorrectionStatus(CorrectionStatus.PENDING);
     }
 
@@ -685,10 +707,20 @@ public class AttendanceService {
         Employee manager = employeeRepository.findById(managerId)
             .orElseThrow(() -> new EntityNotFoundException("Manager not found"));
 
-        Integer deptId = (manager.getRole() == EmployeeRole.DEPARTMENT_MANAGER) 
-            ? manager.getDepartment().getId() 
-            : null;
+        Integer deptId = null;
+        Integer excludeEmpId = null;
 
-        return attendanceLogRepository.getUnifiedInbox(deptId, status, pageable);
+        if (manager.getRole() == EmployeeRole.DEPARTMENT_MANAGER) {
+            deptId = manager.getDepartment().getId();
+            excludeEmpId = managerId;
+        } else if (manager.getRole() == EmployeeRole.HR_ADMIN) {
+            deptId = null;
+            excludeEmpId = managerId;
+        } else if (manager.getRole() == EmployeeRole.SUPER_ADMIN) {
+            deptId = null;
+            excludeEmpId = null;
+        }
+
+        return attendanceLogRepository.getUnifiedInbox(deptId, status, excludeEmpId, pageable);
     }
 }

@@ -65,4 +65,17 @@ public interface LeaveRequestRepository extends JpaRepository<LeaveRequest, Inte
         @Param("status") LeaveStatus status,
         @Param("deptId") Integer deptId
     );
+
+    @Query("SELECT l FROM LeaveRequest l WHERE l.status = :status AND l.employee.id <> :excludeEmployeeId ORDER BY l.createdAt DESC")
+    List<LeaveRequest> findByStatusAndEmployeeIdNot(
+        @Param("status") LeaveStatus status,
+        @Param("excludeEmployeeId") Integer excludeEmployeeId
+    );
+
+    @Query("SELECT l FROM LeaveRequest l WHERE l.status = :status AND l.employee.department.id = :deptId AND l.employee.id <> :excludeEmployeeId ORDER BY l.createdAt DESC")
+    List<LeaveRequest> findByStatusAndEmployeeDepartmentIdAndEmployeeIdNot(
+        @Param("status") LeaveStatus status,
+        @Param("deptId") Integer deptId,
+        @Param("excludeEmployeeId") Integer excludeEmployeeId
+    );
 }

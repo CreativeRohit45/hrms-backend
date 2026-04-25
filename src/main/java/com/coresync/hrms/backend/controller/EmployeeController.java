@@ -33,8 +33,12 @@ public class EmployeeController {
 
     @GetMapping
     @PreAuthorize("hasAnyRole('HR_ADMIN', 'SUPER_ADMIN', 'DEPARTMENT_MANAGER')")
-    public ResponseEntity<Page<EmployeeResponse>> getAllEmployees(Pageable pageable) {
-        return ResponseEntity.ok(employeeService.getAllEmployees(pageable));
+    public ResponseEntity<Page<EmployeeResponse>> getAllEmployees(
+            @RequestParam(required = false) Integer deptId,
+            Pageable pageable,
+            Authentication authentication) {
+        String requesterCode = authentication.getName();
+        return ResponseEntity.ok(employeeService.getAllEmployees(requesterCode, deptId, pageable));
     }
 
     @GetMapping("/{id}")
