@@ -16,6 +16,7 @@ import com.coresync.hrms.backend.repository.HolidayRepository;
 import com.coresync.hrms.backend.enums.EmployeeRole;
 import com.coresync.hrms.backend.projection.UnifiedInboxProjection;
 import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageImpl;
 import org.springframework.data.domain.Pageable;
 
 import jakarta.persistence.EntityNotFoundException;
@@ -673,16 +674,20 @@ public class AttendanceService {
             
         if (manager.getRole() == EmployeeRole.DEPARTMENT_MANAGER) {
             return attendanceLogRepository.findByCorrectionStatusAndEmployeeDepartmentIdAndEmployeeIdNot(
-                CorrectionStatus.PENDING, manager.getDepartment().getId(), managerId);
+                CorrectionStatus.PENDING, manager.getDepartment().getId(), managerId).stream()
+                .filter(a -> a.getEmployee().getRole() == EmployeeRole.EMPLOYEE)
+                .toList();
         } else if (manager.getRole() == EmployeeRole.HR_ADMIN) {
-            return attendanceLogRepository.findByCorrectionStatusAndEmployeeIdNot(CorrectionStatus.PENDING, managerId);
+            return attendanceLogRepository.findByCorrectionStatusAndEmployeeIdNot(CorrectionStatus.PENDING, managerId).stream()
+                .filter(a -> a.getEmployee().getRole() == EmployeeRole.EMPLOYEE)
+                .toList();
         }
         
-        return attendanceLogRepository.findByCorrectionStatus(CorrectionStatus.PENDING);
+        return attendanceLogRepository.findByCorrectionStatusAndEmployeeIdNot(CorrectionStatus.PENDING, managerId);
     }
 
     @Transactional(readOnly = true)
-    public Page<AttendanceLog> getDailyRoster(Integer managerId, LocalDate date, Integer shiftId, Pageable pageable) {
+    public Page<AttendanceLog> getDailyRoster(Integer managerId, LocalDate date, Integer shiftId, Integer departmentId, String status, Pageable pageable) {
         Employee manager = employeeRepository.findById(managerId)
             .orElseThrow(() -> new EntityNotFoundException("Manager not found"));
 
@@ -696,7 +701,14 @@ public class AttendanceService {
                     manager.getDepartment().getId(), date, pageable);
             }
         } else {
-            if (shiftId != null) {
+            Integer effectiveDeptId = departmentId;
+            if (effectiveDeptId != null && shiftId != null) {
+                rosterPage = attendanceLogRepository.findByEmployeeDepartmentIdAndWorkDateAndShiftId(
+                    effectiveDeptId, date, shiftId, pageable);
+            } else if (effectiveDeptId != null) {
+                rosterPage = attendanceLogRepository.findByEmployeeDepartmentIdAndWorkDate(
+                    effectiveDeptId, date, pageable);
+            } else if (shiftId != null) {
                 rosterPage = attendanceLogRepository.findByWorkDateAndShiftIdOrderByPunchInTimeDesc(date, shiftId, pageable);
             } else {
                 rosterPage = attendanceLogRepository.findByWorkDateOrderByPunchInTimeDesc(date, pageable);
@@ -705,29 +717,40 @@ public class AttendanceService {
 
         // Apply auto-healing to the results in the page
         rosterPage.forEach(this::autoHealLog);
+
+        if (status != null && !status.isBlank()) {
+            AttendanceStatus requestedStatus = AttendanceStatus.valueOf(status);
+            List<AttendanceLog> filtered = rosterPage.getContent().stream()
+                .filter(log -> log.getAttendanceStatus() == requestedStatus)
+                .toList();
+            return new PageImpl<>(filtered, pageable, filtered.size());
+        }
         
         return rosterPage;
     }
 
     @Transactional(readOnly = true)
-    public Page<UnifiedInboxProjection> getUnifiedInbox(Integer managerId, String status, Pageable pageable) {
+    public Page<UnifiedInboxProjection> getUnifiedInbox(Integer managerId, String status, String requestType, Integer departmentId, Pageable pageable) {
         Employee manager = employeeRepository.findById(managerId)
             .orElseThrow(() -> new EntityNotFoundException("Manager not found"));
 
         Integer deptId = null;
         Integer excludeEmpId = null;
+        String requesterRole = null;
 
         if (manager.getRole() == EmployeeRole.DEPARTMENT_MANAGER) {
             deptId = manager.getDepartment().getId();
             excludeEmpId = managerId;
+            requesterRole = EmployeeRole.EMPLOYEE.name();
         } else if (manager.getRole() == EmployeeRole.HR_ADMIN) {
-            deptId = null;
+            deptId = departmentId;
             excludeEmpId = managerId;
+            requesterRole = EmployeeRole.EMPLOYEE.name();
         } else if (manager.getRole() == EmployeeRole.SUPER_ADMIN) {
-            deptId = null;
-            excludeEmpId = null;
+            deptId = departmentId;
+            excludeEmpId = managerId;
         }
 
-        return attendanceLogRepository.getUnifiedInbox(deptId, status, excludeEmpId, pageable);
+        return attendanceLogRepository.getUnifiedInbox(deptId, status, requestType, requesterRole, excludeEmpId, pageable);
     }
 }

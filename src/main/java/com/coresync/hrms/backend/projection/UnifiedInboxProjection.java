@@ -17,4 +17,44 @@ public interface UnifiedInboxProjection {
     String getStatus();
     LocalDateTime getCreatedAt();
     java.time.LocalDate getReferenceDate();
+    java.time.LocalDate getReferenceEndDate();
+    Integer getDepartmentId();
+    String getDepartmentName();
+    String getLeaveTypeName();
+    Double getAppliedDays();
+    @com.fasterxml.jackson.annotation.JsonIgnore
+    Object getHalfDayRaw();
+
+    default Boolean getHalfDay() {
+        Object raw = getHalfDayRaw();
+        if (raw == null) return false;
+        if (raw instanceof Boolean) return (Boolean) raw;
+        if (raw instanceof Number) return ((Number) raw).intValue() == 1;
+        return "true".equalsIgnoreCase(raw.toString()) || "1".equals(raw.toString());
+    }
+
+    String getHalfDaySession();
+    String getGatepassType();
+    java.time.LocalDateTime getRequestedOutTime();
+    java.time.LocalDateTime getRequestedInTime();
+    java.time.LocalDateTime getActualOutTime();
+    java.time.LocalDateTime getActualInTime();
+    
+    @com.fasterxml.jackson.annotation.JsonIgnore
+    Object getEmergencyRaw();
+
+    default Boolean getEmergency() {
+        Object raw = getEmergencyRaw();
+        if (raw == null) return false;
+        if (raw instanceof Boolean) return (Boolean) raw;
+        if (raw instanceof Number) return ((Number) raw).intValue() == 1;
+        return "true".equalsIgnoreCase(raw.toString()) || "1".equals(raw.toString());
+    }
+    java.time.LocalDateTime getOriginalPunchInTime();
+    java.time.LocalDateTime getOriginalPunchOutTime();
+    java.time.LocalDateTime getRequestedPunchInTime();
+    java.time.LocalDateTime getRequestedPunchOutTime();
+    Integer getOvertimeMinutes();
+    String getAttendanceStatus();
+    String getRejectionReason();
 }

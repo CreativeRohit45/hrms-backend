@@ -574,13 +574,17 @@ public class LeaveService {
         if (manager.getRole() == EmployeeRole.DEPARTMENT_MANAGER) {
             return leaveRequestRepository.findByStatusAndEmployeeDepartmentIdAndEmployeeIdNot(
                 LeaveStatus.PENDING, manager.getDepartment().getId(), managerId)
-                .stream().map(this::toResponse).toList();
+                .stream()
+                .filter(l -> l.getEmployee().getRole() == EmployeeRole.EMPLOYEE)
+                .map(this::toResponse).toList();
         } else if (manager.getRole() == EmployeeRole.HR_ADMIN) {
             return leaveRequestRepository.findByStatusAndEmployeeIdNot(LeaveStatus.PENDING, managerId)
-                .stream().map(this::toResponse).toList();
+                .stream()
+                .filter(l -> l.getEmployee().getRole() == EmployeeRole.EMPLOYEE)
+                .map(this::toResponse).toList();
         }
         
-        return leaveRequestRepository.findByStatusOrderByCreatedAtDesc(LeaveStatus.PENDING)
+        return leaveRequestRepository.findByStatusAndEmployeeIdNot(LeaveStatus.PENDING, managerId)
             .stream().map(this::toResponse).toList();
     }
 

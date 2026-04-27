@@ -198,9 +198,20 @@ public class GatepassService {
 
         if (manager.getRole() == EmployeeRole.DEPARTMENT_MANAGER) {
             return gatepassRepository.findByStatusAndEmployeeDepartmentId(
-                GatepassStatus.PENDING, manager.getDepartment().getId()).stream().map(this::toResponse).collect(Collectors.toList());
+                GatepassStatus.PENDING, manager.getDepartment().getId()).stream()
+                .filter(g -> !g.getEmployee().getId().equals(managerId))
+                .filter(g -> g.getEmployee().getRole() == EmployeeRole.EMPLOYEE)
+                .map(this::toResponse).collect(Collectors.toList());
         }
-        return gatepassRepository.findByStatusOrderByCreatedAtDesc(GatepassStatus.PENDING).stream().map(this::toResponse).collect(Collectors.toList());
+        if (manager.getRole() == EmployeeRole.HR_ADMIN) {
+            return gatepassRepository.findByStatusOrderByCreatedAtDesc(GatepassStatus.PENDING).stream()
+                .filter(g -> !g.getEmployee().getId().equals(managerId))
+                .filter(g -> g.getEmployee().getRole() == EmployeeRole.EMPLOYEE)
+                .map(this::toResponse).collect(Collectors.toList());
+        }
+        return gatepassRepository.findByStatusOrderByCreatedAtDesc(GatepassStatus.PENDING).stream()
+            .filter(g -> !g.getEmployee().getId().equals(managerId))
+            .map(this::toResponse).collect(Collectors.toList());
     }
 
     private Gatepass findGatepass(Integer id) {

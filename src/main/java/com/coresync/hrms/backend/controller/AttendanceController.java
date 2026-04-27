@@ -91,10 +91,12 @@ public class AttendanceController {
     @PreAuthorize("hasAnyRole('DEPARTMENT_MANAGER', 'HR_ADMIN', 'SUPER_ADMIN')")
     public ResponseEntity<Page<UnifiedInboxProjection>> getUnifiedInbox(
             @RequestParam(required = false) String status,
+            @RequestParam(required = false) String requestType,
+            @RequestParam(required = false) Integer departmentId,
             Pageable pageable,
             Authentication authentication) {
         Integer managerId = resolveId(authentication);
-        return ResponseEntity.ok(attendanceService.getUnifiedInbox(managerId, status, pageable));
+        return ResponseEntity.ok(attendanceService.getUnifiedInbox(managerId, status, requestType, departmentId, pageable));
     }
 
     @GetMapping({"/pending-corrections", "/corrections/pending"})
@@ -141,10 +143,12 @@ public class AttendanceController {
     public ResponseEntity<Page<AttendanceLogResponse>> getDailyRoster(
             @RequestParam("date") @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate date,
             @RequestParam(required = false) Integer shiftId,
+            @RequestParam(required = false) Integer departmentId,
+            @RequestParam(required = false) String status,
             Pageable pageable,
             Authentication authentication) {
         Integer managerId = resolveId(authentication);
-        return ResponseEntity.ok(attendanceService.getDailyRoster(managerId, date, shiftId, pageable)
+        return ResponseEntity.ok(attendanceService.getDailyRoster(managerId, date, shiftId, departmentId, status, pageable)
                 .map(this::toResponse));
     }
 

@@ -97,30 +97,130 @@ public interface AttendanceLogRepository extends JpaRepository<AttendanceLog, Lo
 
     @Query(value = """
         WITH InboxQueue AS (
-            SELECT 'LEAVE' as request_type, id as source_id, employee_id, reason as details, created_at, start_date as reference_date, end_date as reference_end_date, status 
-            FROM leave_requests 
+            SELECT
+                'LEAVE' as request_type,
+                lr.id as source_id,
+                lr.employee_id,
+                lr.reason as details,
+                lr.created_at,
+                lr.start_date as reference_date,
+                lr.end_date as reference_end_date,
+                lr.status,
+                lt.name as leave_type_name,
+                lr.applied_days,
+                lr.is_half_day as half_day,
+                lr.half_day_session,
+                NULL as gatepass_type,
+                NULL as requested_out_time,
+                NULL as requested_in_time,
+                NULL as actual_out_time,
+                NULL as actual_in_time,
+                NULL as emergency,
+                NULL as original_punch_in_time,
+                NULL as original_punch_out_time,
+                NULL as requested_punch_in_time,
+                NULL as requested_punch_out_time,
+                NULL as overtime_minutes,
+                NULL as attendance_status,
+                lr.rejection_reason
+            FROM leave_requests lr
+            INNER JOIN leave_types lt ON lr.leave_type_id = lt.id
             
             UNION ALL
             
-            SELECT 'GATEPASS', id, employee_id, reason, created_at, request_date, request_date, status 
-            FROM gatepasses 
+            SELECT
+                'GATEPASS',
+                gp.id,
+                gp.employee_id,
+                gp.reason,
+                gp.created_at,
+                gp.request_date,
+                gp.request_date,
+                gp.status,
+                NULL,
+                NULL,
+                NULL,
+                NULL,
+                gp.gatepass_type,
+                gp.requested_out_time,
+                gp.requested_in_time,
+                gp.actual_out_time,
+                gp.actual_in_time,
+                gp.is_emergency,
+                NULL,
+                NULL,
+                NULL,
+                NULL,
+                NULL,
+                NULL,
+                gp.rejection_reason
+            FROM gatepasses gp
             
             UNION ALL
             
-            SELECT 'CORRECTION', id, employee_id, correction_reason, created_at, work_date, work_date, correction_status 
-            FROM attendance_logs 
-            WHERE correction_status != 'NONE'
+            SELECT
+                'CORRECTION',
+                al.id,
+                al.employee_id,
+                al.correction_reason,
+                al.created_at,
+                al.work_date,
+                al.work_date,
+                al.correction_status,
+                NULL,
+                NULL,
+                NULL,
+                NULL,
+                NULL,
+                NULL,
+                NULL,
+                NULL,
+                NULL,
+                NULL,
+                al.punch_in_time,
+                al.punch_out_time,
+                al.requested_punch_in_time,
+                al.requested_punch_out_time,
+                NULL,
+                al.attendance_status,
+                NULL
+            FROM attendance_logs al
+            WHERE al.correction_status != 'NONE'
             
             UNION ALL
             
-            SELECT 'OVERTIME', id, employee_id, CONCAT('OT Work (', overtime_minutes, ' mins) on ', work_date), created_at, work_date, work_date, 
+            SELECT
+                'OVERTIME',
+                al.id,
+                al.employee_id,
+                CONCAT('OT Work (', al.overtime_minutes, ' mins) on ', al.work_date),
+                al.created_at,
+                al.work_date,
+                al.work_date,
                 CASE 
-                    WHEN is_overtime_approved IS NULL THEN 'PENDING'
-                    WHEN is_overtime_approved = true THEN 'APPROVED'
+                    WHEN al.is_overtime_approved IS NULL THEN 'PENDING'
+                    WHEN al.is_overtime_approved = true THEN 'APPROVED'
                     ELSE 'REJECTED'
-                END as status
-            FROM attendance_logs 
-            WHERE is_overtime = true
+                END as status,
+                NULL,
+                NULL,
+                NULL,
+                NULL,
+                NULL,
+                NULL,
+                NULL,
+                NULL,
+                NULL,
+                NULL,
+                al.punch_in_time,
+                al.punch_out_time,
+                NULL,
+                NULL,
+                al.overtime_minutes,
+                al.attendance_status,
+                NULL
+            FROM attendance_logs al
+            WHERE al.is_overtime = true
         )
         SELECT 
             CONCAT(i.request_type, '-', i.source_id) as id,
@@ -132,23 +232,45 @@ public interface AttendanceLogRepository extends JpaRepository<AttendanceLog, Lo
             i.status as status,
             i.created_at as createdAt,
             i.reference_date as referenceDate,
-            0 as clashCount
+            i.reference_end_date as referenceEndDate,
+            e.department_id as departmentId,
+            d.name as departmentName,
+            i.leave_type_name as leaveTypeName,
+            i.applied_days as appliedDays,
+            i.half_day as halfDayRaw,
+            i.half_day_session as halfDaySession,
+            i.gatepass_type as gatepassType,
+            i.requested_out_time as requestedOutTime,
+            i.requested_in_time as requestedInTime,
+            i.actual_out_time as actualOutTime,
+            i.actual_in_time as actualInTime,
+            i.emergency as emergencyRaw,
+            i.original_punch_in_time as originalPunchInTime,
+            i.original_punch_out_time as originalPunchOutTime,
+            i.requested_punch_in_time as requestedPunchInTime,
+            i.requested_punch_out_time as requestedPunchOutTime,
+            i.overtime_minutes as overtimeMinutes,
+            i.attendance_status as attendanceStatus,
+            i.rejection_reason as rejectionReason
         FROM InboxQueue i
         INNER JOIN employees e ON i.employee_id = e.id
+        INNER JOIN departments d ON e.department_id = d.id
         WHERE (:deptId IS NULL OR e.department_id = :deptId)
         AND (:status IS NULL OR i.status = :status)
+        AND (:requestType IS NULL OR i.request_type = :requestType)
+        AND (:requesterRole IS NULL OR e.role = :requesterRole)
         AND (:excludeEmpId IS NULL OR e.id != :excludeEmpId)
         ORDER BY i.created_at DESC
         """, 
         countQuery = """
         WITH InboxQueue AS (
-            SELECT employee_id, status FROM leave_requests
+            SELECT 'LEAVE' as request_type, employee_id, status FROM leave_requests
             UNION ALL
-            SELECT employee_id, status FROM gatepasses
+            SELECT 'GATEPASS', employee_id, status FROM gatepasses
             UNION ALL
-            SELECT employee_id, correction_status as status FROM attendance_logs WHERE correction_status != 'NONE'
+            SELECT 'CORRECTION', employee_id, correction_status as status FROM attendance_logs WHERE correction_status != 'NONE'
             UNION ALL
-            SELECT employee_id, 
+            SELECT 'OVERTIME', employee_id, 
                 CASE 
                     WHEN is_overtime_approved IS NULL THEN 'PENDING'
                     WHEN is_overtime_approved = true THEN 'APPROVED'
@@ -161,12 +283,16 @@ public interface AttendanceLogRepository extends JpaRepository<AttendanceLog, Lo
         INNER JOIN employees e ON i.employee_id = e.id
         WHERE (:deptId IS NULL OR e.department_id = :deptId)
         AND (:status IS NULL OR i.status = :status)
+        AND (:requestType IS NULL OR i.request_type = :requestType)
+        AND (:requesterRole IS NULL OR e.role = :requesterRole)
         AND (:excludeEmpId IS NULL OR e.id != :excludeEmpId)
         """, 
         nativeQuery = true)
     Page<UnifiedInboxProjection> getUnifiedInbox(
         @Param("deptId") Integer deptId, 
         @Param("status") String status, 
+        @Param("requestType") String requestType,
+        @Param("requesterRole") String requesterRole,
         @Param("excludeEmpId") Integer excludeEmpId,
         Pageable pageable);
 }
