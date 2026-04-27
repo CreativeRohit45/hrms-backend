@@ -635,9 +635,6 @@ public class LeaveService {
             .build();
     }
 
-    // ═══════════════════════════════════════════════════════════════════
-    //  6. HELPERS
-    // ═══════════════════════════════════════════════════════════════════
 
     public double calculateActualLeaveDays(LocalDate start, LocalDate end, Employee emp) {
         CompanyLocation loc = emp.getLocation();
@@ -664,6 +661,10 @@ public class LeaveService {
             });
     }
 
+
+    // ═══════════════════════════════════════════════════════════════════
+    //  6. HELPERS
+    // ═══════════════════════════════════════════════════════════════════
     private void writeAudit(Employee e, LeaveType t, int y, LeaveTransactionType tx, double amt, double after, String res, Integer refId, Integer adminId) {
         auditRepository.save(LeaveBalanceAudit.builder()
             .employee(e).leaveType(t).year(y).transactionType(tx)
@@ -687,7 +688,7 @@ public class LeaveService {
 
     private LeaveRequest findPendingLeave(Integer id) {
         LeaveRequest l = leaveRequestRepository.findById(id).orElseThrow();
-        if (l.getStatus() != LeaveStatus.PENDING) throw new IllegalStateException("Already " + l.getStatus());
+        if (l.getStatus() != com.coresync.hrms.backend.enums.LeaveStatus.PENDING) throw new IllegalStateException("Already " + l.getStatus());
         return l;
     }
 
@@ -704,6 +705,23 @@ public class LeaveService {
     }
 
     private LeaveResponse toResponse(LeaveRequest l) {
+        String actionByName = null;
+        if (l.getActionByUserId() != null) {
+            actionByName = employeeRepository.findById(l.getActionByUserId())
+                .map(Employee::getFullName).orElse(null);
+        }
+
+        String pendingApproverName = null;
+        if (com.coresync.hrms.backend.enums.LeaveStatus.PENDING == l.getStatus()) {
+            if (l.getEmployee().getRole() == EmployeeRole.DEPARTMENT_MANAGER) {
+                pendingApproverName = "Super Admin";
+            } else if (l.getEmployee().getDepartment() != null) {
+                pendingApproverName = employeeRepository.findManagerNameByDepartmentId(l.getEmployee().getDepartment().getId()).orElse("Super Admin");
+            } else {
+                pendingApproverName = "Super Admin";
+            }
+        }
+
         return LeaveResponse.builder()
             .id(l.getId()).employeeId(l.getEmployee().getId()).employeeCode(l.getEmployee().getEmployeeCode())
             .fullName(l.getEmployee().getFullName()).leaveTypeId(l.getLeaveType().getId())
@@ -711,7 +729,10 @@ public class LeaveService {
             .startDate(l.getStartDate()).endDate(l.getEndDate()).appliedDays(l.getAppliedDays())
             .reason(l.getReason()).status(l.getStatus().name()).halfDay(l.isHalfDay())
             .halfDaySession(l.getHalfDaySession()).attachmentUrl(l.getAttachmentUrl())
-            .actionByUserId(l.getActionByUserId()).actionAt(l.getActionAt())
+            .actionByUserId(l.getActionByUserId())
+            .actionByName(actionByName)
+            .pendingApproverName(pendingApproverName)
+            .actionAt(l.getActionAt())
             .rejectionReason(l.getRejectionReason()).createdAt(l.getCreatedAt()).build();
     }
 
@@ -722,10 +743,17 @@ public class LeaveService {
     }
 
     private LeaveBalanceAuditResponse toAuditResponse(LeaveBalanceAudit a) {
+        String performedByName = "System";
+        if (a.getPerformedByUserId() != null) {
+            performedByName = employeeRepository.findById(a.getPerformedByUserId())
+                .map(Employee::getFullName).orElse("System");
+        }
+
         return LeaveBalanceAuditResponse.builder().id(a.getId()).leaveTypeName(a.getLeaveType().getName())
             .leaveTypeCode(a.getLeaveType().getCode()).transactionType(a.getTransactionType().name())
             .amount(a.getAmount()).balanceAfter(a.getBalanceAfter()).reason(a.getReason())
             .referenceLeaveId(a.getReferenceLeaveId()).performedByUserId(a.getPerformedByUserId())
+            .performedByName(performedByName)
             .createdAt(a.getCreatedAt()).build();
     }
 }

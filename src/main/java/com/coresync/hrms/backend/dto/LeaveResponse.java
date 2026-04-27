@@ -31,6 +31,7 @@ public class LeaveResponse {
 
     private Integer actionByUserId;
     private String actionByName;
+    private String pendingApproverName;
     private LocalDateTime actionAt;
     private String rejectionReason;
 

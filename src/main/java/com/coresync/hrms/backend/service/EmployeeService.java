@@ -3,8 +3,11 @@ package com.coresync.hrms.backend.service;
 
 import com.coresync.hrms.backend.dto.EmployeeCreateRequest;
 import com.coresync.hrms.backend.dto.EmployeeResponse;
+import com.coresync.hrms.backend.dto.EmployeeUpdateRequest;
 import com.coresync.hrms.backend.dto.ProfileUpdateRequest;
 import com.coresync.hrms.backend.entity.*;
+import com.coresync.hrms.backend.enums.EmployeeRole;
+import com.coresync.hrms.backend.enums.PaymentType;
 import com.coresync.hrms.backend.enums.EmployeeStatus;
 import com.coresync.hrms.backend.repository.*;
 import jakarta.persistence.EntityNotFoundException;
@@ -93,7 +96,7 @@ public class EmployeeService {
         Employee requester = employeeRepository.findByEmployeeCode(requesterCode)
             .orElseThrow(() -> new EntityNotFoundException("Requester not found: " + requesterCode));
 
-        if (requester.getRole() == com.coresync.hrms.backend.enums.EmployeeRole.DEPARTMENT_MANAGER) {
+        if (requester.getRole() == EmployeeRole.DEPARTMENT_MANAGER) {
             // Strict scoping: Manager only sees their department
             return employeeRepository.findByDepartmentId(requester.getDepartment().getId(), pageable)
                 .map(this::toResponse);
@@ -151,7 +154,7 @@ public class EmployeeService {
     }
 
     @Transactional
-    public EmployeeResponse updateEmployee(Integer id, com.coresync.hrms.backend.dto.EmployeeUpdateRequest request) {
+    public EmployeeResponse updateEmployee(Integer id, EmployeeUpdateRequest request) {
         Employee employee = employeeRepository.findById(id)
             .orElseThrow(() -> new EntityNotFoundException("Employee not found: ID " + id));
 

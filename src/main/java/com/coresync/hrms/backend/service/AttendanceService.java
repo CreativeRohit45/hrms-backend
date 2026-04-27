@@ -144,8 +144,13 @@ public class AttendanceService {
         }
 
         LocalDateTime now = LocalDateTime.now();
+        LocalDateTime punchInTime = openLog.getPunchInTime();
+        if (punchInTime == null) {
+            punchInTime = now;
+            openLog.setPunchInTime(punchInTime);
+        }
 
-        long grossMinutes = ChronoUnit.MINUTES.between(openLog.getPunchInTime(), now);
+        long grossMinutes = ChronoUnit.MINUTES.between(punchInTime, now);
         
         // Fix 2: "Unpaid Break" Robbery - Only deduct if worked >= 5 hours (300 mins)
         int unpaidBreakMinutes = 0;
@@ -412,6 +417,8 @@ public class AttendanceService {
                     .employee(employee)
                     .shift(employee.getShift())
                     .location(employee.getLocation())
+                    .punchInTime(date.atTime(23, 59, 59))
+                    .punchOutTime(date.atTime(23, 59, 59))
                     .attendanceStatus(AttendanceStatus.ON_LEAVE)
                     .workDate(date)
                     .isManuallyCorrected(false)

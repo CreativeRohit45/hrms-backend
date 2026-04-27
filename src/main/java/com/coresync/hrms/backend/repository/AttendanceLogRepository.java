@@ -97,23 +97,23 @@ public interface AttendanceLogRepository extends JpaRepository<AttendanceLog, Lo
 
     @Query(value = """
         WITH InboxQueue AS (
-            SELECT 'LEAVE' as request_type, id as source_id, employee_id, reason as details, created_at, start_date as reference_date, status 
+            SELECT 'LEAVE' as request_type, id as source_id, employee_id, reason as details, created_at, start_date as reference_date, end_date as reference_end_date, status 
             FROM leave_requests 
             
             UNION ALL
             
-            SELECT 'GATEPASS', id, employee_id, reason, created_at, request_date, status 
+            SELECT 'GATEPASS', id, employee_id, reason, created_at, request_date, request_date, status 
             FROM gatepasses 
             
             UNION ALL
             
-            SELECT 'CORRECTION', id, employee_id, correction_reason, created_at, work_date, correction_status 
+            SELECT 'CORRECTION', id, employee_id, correction_reason, created_at, work_date, work_date, correction_status 
             FROM attendance_logs 
             WHERE correction_status != 'NONE'
             
             UNION ALL
             
-            SELECT 'OVERTIME', id, employee_id, CONCAT('OT Work (', overtime_minutes, ' mins) on ', work_date), created_at, work_date, 
+            SELECT 'OVERTIME', id, employee_id, CONCAT('OT Work (', overtime_minutes, ' mins) on ', work_date), created_at, work_date, work_date, 
                 CASE 
                     WHEN is_overtime_approved IS NULL THEN 'PENDING'
                     WHEN is_overtime_approved = true THEN 'APPROVED'
@@ -131,7 +131,8 @@ public interface AttendanceLogRepository extends JpaRepository<AttendanceLog, Lo
             i.details as details,
             i.status as status,
             i.created_at as createdAt,
-            i.reference_date as referenceDate
+            i.reference_date as referenceDate,
+            0 as clashCount
         FROM InboxQueue i
         INNER JOIN employees e ON i.employee_id = e.id
         WHERE (:deptId IS NULL OR e.department_id = :deptId)

@@ -16,5 +16,6 @@ public class LeaveBalanceAuditResponse {
     private String reason;
     private Integer referenceLeaveId;
     private Integer performedByUserId;
+    private String performedByName;
     private LocalDateTime createdAt;
 }
