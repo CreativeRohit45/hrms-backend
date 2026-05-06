@@ -12,6 +12,8 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 
 import java.time.DayOfWeek;
 import java.time.LocalDate;
@@ -174,7 +176,7 @@ public class LeaveService {
         // Link audit to leave ID
         if (leaveType.isPaid()) {
             List<LeaveBalanceAudit> recentAudits = auditRepository.findByEmployeeIdAndLeaveTypeIdAndYearOrderByCreatedAtDesc(
-                employeeId, leaveType.getId(), year);
+                employeeId, leaveType.getId(), year, org.springframework.data.domain.PageRequest.of(0, 1)).getContent();
             if (!recentAudits.isEmpty()) {
                 LeaveBalanceAudit latest = recentAudits.get(0);
                 if (latest.getReferenceLeaveId() == null) {
@@ -596,11 +598,11 @@ public class LeaveService {
     }
 
     @Transactional(readOnly = true)
-    public List<LeaveBalanceAuditResponse> getBalanceAuditTrail(Integer empId, Integer typeId, int year) {
-        List<LeaveBalanceAudit> trail = (typeId != null) 
-            ? auditRepository.findByEmployeeIdAndLeaveTypeIdAndYearOrderByCreatedAtDesc(empId, typeId, year)
-            : auditRepository.findByEmployeeIdAndYearOrderByCreatedAtDesc(empId, year);
-        return trail.stream().map(this::toAuditResponse).toList();
+    public Page<LeaveBalanceAuditResponse> getBalanceAuditTrail(Integer empId, Integer typeId, int year, Pageable pageable) {
+        Page<LeaveBalanceAudit> trail = (typeId != null) 
+            ? auditRepository.findByEmployeeIdAndLeaveTypeIdAndYearOrderByCreatedAtDesc(empId, typeId, year, pageable)
+            : auditRepository.findByEmployeeIdAndYearOrderByCreatedAtDesc(empId, year, pageable);
+        return trail.map(this::toAuditResponse);
     }
 
     @Transactional(readOnly = true)

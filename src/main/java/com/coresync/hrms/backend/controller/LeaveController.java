@@ -13,6 +13,8 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 
 import java.time.LocalDate;
 import java.util.List;
@@ -53,13 +55,14 @@ public class LeaveController {
     }
 
     @GetMapping("/balances/audit")
-    public ResponseEntity<List<LeaveBalanceAuditResponse>> getMyAuditTrail(
+    public ResponseEntity<Page<LeaveBalanceAuditResponse>> getMyAuditTrail(
             @RequestParam(required = false) Integer leaveTypeId,
             @RequestParam(required = false) Integer year,
+            Pageable pageable,
             Authentication authentication) {
         Integer employeeId = resolveId(authentication);
         int targetYear = (year != null) ? year : LocalDate.now().getYear();
-        return ResponseEntity.ok(leaveService.getBalanceAuditTrail(employeeId, leaveTypeId, targetYear));
+        return ResponseEntity.ok(leaveService.getBalanceAuditTrail(employeeId, leaveTypeId, targetYear, pageable));
     }
 
     @PutMapping("/{id}/cancel")
@@ -193,12 +196,13 @@ public class LeaveController {
 
     @GetMapping("/admin/audit/{employeeId}")
     @PreAuthorize("hasAnyRole('HR_ADMIN', 'SUPER_ADMIN')")
-    public ResponseEntity<List<LeaveBalanceAuditResponse>> getEmployeeAuditTrail(
+    public ResponseEntity<Page<LeaveBalanceAuditResponse>> getEmployeeAuditTrail(
             @PathVariable Integer employeeId,
             @RequestParam(required = false) Integer leaveTypeId,
-            @RequestParam(required = false) Integer year) {
+            @RequestParam(required = false) Integer year,
+            Pageable pageable) {
         int targetYear = (year != null) ? year : LocalDate.now().getYear();
-        return ResponseEntity.ok(leaveService.getBalanceAuditTrail(employeeId, leaveTypeId, targetYear));
+        return ResponseEntity.ok(leaveService.getBalanceAuditTrail(employeeId, leaveTypeId, targetYear, pageable));
     }
 
     @GetMapping("/admin/requests/{employeeId}")
