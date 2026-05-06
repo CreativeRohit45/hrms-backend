@@ -195,13 +195,21 @@ public class EmployeeService {
         return toResponse(saved);
     }
 
+    /**
+     * Soft-delete an employee.
+     * Instead of a hard DELETE (which would crash with FK constraint violations
+     * from attendance_logs, leave_requests, payroll_records, etc.), we flip
+     * the is_deleted flag. The @SQLRestriction on the Employee entity
+     * automatically hides soft-deleted records from all standard queries.
+     */
     @Transactional
     public void deleteEmployee(Integer id) {
-        if (!employeeRepository.existsById(id)) {
-            throw new EntityNotFoundException("Employee not found: ID " + id);
-        }
-        employeeRepository.deleteById(id);
-        log.info("[EmployeeService] Deleted employee record: ID {}", id);
+        Employee employee = employeeRepository.findById(id)
+            .orElseThrow(() -> new EntityNotFoundException("Employee not found: ID " + id));
+        employee.setDeleted(true);
+        employee.setStatus(EmployeeStatus.TERMINATED);
+        employeeRepository.save(employee);
+        log.info("[EmployeeService] Soft-deleted employee: {} (ID {})", employee.getEmployeeCode(), id);
     }
 
     private String generateNextEmployeeCode() {

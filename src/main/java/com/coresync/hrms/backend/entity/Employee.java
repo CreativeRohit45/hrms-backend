@@ -7,6 +7,7 @@ import com.coresync.hrms.backend.enums.PaymentType;
 import jakarta.persistence.*;
 import lombok.*;
 import org.hibernate.annotations.DynamicUpdate;
+import org.hibernate.annotations.SQLRestriction;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
@@ -19,6 +20,7 @@ import java.time.LocalDateTime;
     @Index(name = "idx_employees_role",        columnList = "role")
 })
 @DynamicUpdate
+@SQLRestriction("is_deleted = false")
 @Getter @Setter @NoArgsConstructor @AllArgsConstructor @Builder
 public class Employee {
 
@@ -105,6 +107,11 @@ public class Employee {
 
     @Column(name = "updated_at", nullable = false)
     private LocalDateTime updatedAt;
+
+    /** Soft-delete flag. When true, the @SQLRestriction hides this entity from all queries. */
+    @Column(name = "is_deleted", nullable = false)
+    @Builder.Default
+    private boolean isDeleted = false;
 
     @PrePersist protected void onCreate() { createdAt = LocalDateTime.now(); updatedAt = LocalDateTime.now(); }
     @PreUpdate protected void onUpdate() { updatedAt = LocalDateTime.now(); }

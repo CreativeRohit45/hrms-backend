@@ -160,7 +160,7 @@ public class PayrollCalculationService {
             List.of(LeaveStatus.APPROVED)
         );
 
-        double lwpDays = 0;
+        BigDecimal lwpDays = BigDecimal.ZERO;
         for (LeaveRequest leave : approvedLeaves) {
             if (!leave.getLeaveType().isPaid()) {
                 // Clamp the leave dates to the payroll period boundaries
@@ -173,9 +173,9 @@ public class PayrollCalculationService {
 
                 // Half-day leaves count as 0.5
                 if (leave.isHalfDay() && daysInPeriod == 1) {
-                    lwpDays += 0.5;
+                    lwpDays = lwpDays.add(new BigDecimal("0.5"));
                 } else {
-                    lwpDays += daysInPeriod;
+                    lwpDays = lwpDays.add(BigDecimal.valueOf(daysInPeriod));
                 }
 
                 log.info("[Payroll] LWP detected: LeaveType={}, Days={}, HalfDay={}",
@@ -185,7 +185,7 @@ public class PayrollCalculationService {
 
         int daysInMonth = YearMonth.of(payrollYear, payrollMonth).lengthOfMonth();
         BigDecimal dailyRate = baseSalary.divide(BigDecimal.valueOf(daysInMonth), INTERMEDIATE_SCALE, ROUNDING);
-        BigDecimal lwpDeduction = dailyRate.multiply(BigDecimal.valueOf(lwpDays)).setScale(SCALE, ROUNDING);
+        BigDecimal lwpDeduction = dailyRate.multiply(lwpDays).setScale(SCALE, ROUNDING);
 
         // ═══════════════════════════════════════════════════════════
         //  BUG #3 FIX: No shortfall/gatepass deduction here.

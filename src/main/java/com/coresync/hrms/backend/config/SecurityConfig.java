@@ -56,6 +56,7 @@ public class SecurityConfig {
             .authorizeHttpRequests(auth -> auth
                 // 1. Public Endpoints
                 .requestMatchers(AntPathRequestMatcher.antMatcher("/api/v1/auth/login")).permitAll()
+                .requestMatchers(AntPathRequestMatcher.antMatcher("/api/v1/auth/refresh")).permitAll()
                 .requestMatchers(AntPathRequestMatcher.antMatcher("/api/v1/system/info")).permitAll()
                 .requestMatchers(AntPathRequestMatcher.antMatcher("/error")).permitAll()
                 .requestMatchers(AntPathRequestMatcher.antMatcher("/actuator/health")).permitAll()
