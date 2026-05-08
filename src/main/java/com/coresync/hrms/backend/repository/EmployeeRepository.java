@@ -42,6 +42,14 @@ public interface EmployeeRepository extends JpaRepository<Employee, Integer> {
     @Query("SELECT e.fullName FROM Employee e WHERE e.department.id = :deptId AND e.role = 'DEPARTMENT_MANAGER'")
     java.util.Optional<String> findManagerNameByDepartmentId(@Param("deptId") Integer deptId);
 
+    @Query("SELECT COUNT(e) FROM Employee e WHERE e.department.id = :deptId AND e.shift.id = :shiftId AND e.status = :status AND e.role = :role")
+    long countByDepartmentIdAndShiftIdAndStatusAndRole(
+        @Param("deptId") Integer deptId,
+        @Param("shiftId") Integer shiftId,
+        @Param("status") EmployeeStatus status,
+        @Param("role") EmployeeRole role
+    );
+
     /**
      * Bypass the @SQLRestriction to find ANY employee by ID (including soft-deleted).
      * Used internally for payroll lookups where historical employee data must remain accessible.

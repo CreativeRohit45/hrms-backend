@@ -4,6 +4,7 @@ import com.coresync.hrms.backend.dto.CorrectionRequest;
 import com.coresync.hrms.backend.dto.PunchInRequest;
 import com.coresync.hrms.backend.entity.AttendanceLog;
 import com.coresync.hrms.backend.entity.Employee;
+import com.coresync.hrms.backend.enums.EmployeeRole;
 import com.coresync.hrms.backend.service.AttendanceService;
 import com.coresync.hrms.backend.dto.AttendanceLogResponse;
 import com.coresync.hrms.backend.repository.EmployeeRepository;
@@ -53,8 +54,14 @@ public class AttendanceController {
             @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate startDate,
             @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate endDate,
             Authentication authentication) {
-        
-        Integer targetId = (employeeId != null) ? employeeId : resolveId(authentication);
+        Integer requesterId = resolveId(authentication);
+        Employee requester = employeeRepository.findById(requesterId)
+            .orElseThrow(() -> new EntityNotFoundException("Employee profile not found: " + requesterId));
+
+        Integer targetId = requesterId;
+        if (employeeId != null && isElevatedUser(requester)) {
+            targetId = employeeId;
+        }
         
         // Defaults for date range if not provided
         LocalDate start = (startDate != null) ? startDate : LocalDate.now().withDayOfMonth(1);
@@ -65,7 +72,8 @@ public class AttendanceController {
     }
 
     // Temporary migration endpoint to sync missing past leaves
-    @GetMapping("/retro-sync-leaves")
+    @PostMapping("/retro-sync-leaves")
+    @PreAuthorize("hasAnyRole('HR_ADMIN', 'SUPER_ADMIN')")
     public ResponseEntity<String> retroSyncLeaves() {
         attendanceService.triggerRetroactiveLeaveSync();
         return ResponseEntity.ok("Sync completed successfully.");
@@ -158,6 +166,12 @@ public class AttendanceController {
             .or(() -> employeeRepository.findByEmail(identifier))
             .map(Employee::getId)
             .orElseThrow(() -> new EntityNotFoundException("Employee profile not found: " + identifier));
+    }
+
+    private boolean isElevatedUser(Employee employee) {
+        return employee.getRole() == EmployeeRole.DEPARTMENT_MANAGER
+            || employee.getRole() == EmployeeRole.HR_ADMIN
+            || employee.getRole() == EmployeeRole.SUPER_ADMIN;
     }
 
     private AttendanceLogResponse toResponse(AttendanceLog log) {

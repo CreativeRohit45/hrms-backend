@@ -40,6 +40,9 @@ public class Shift {
     @Builder.Default
     private short gracePeriodMinutes = 0;
 
+    @Column(name = "minimum_headcount")
+    private Integer minimumHeadcount;
+
     @Column(name = "is_active", nullable = false)
     @Builder.Default
     private boolean isActive = true;

@@ -4,6 +4,7 @@ package com.coresync.hrms.backend.repository;
 import com.coresync.hrms.backend.entity.LeaveRequest;
 import com.coresync.hrms.backend.enums.LeaveStatus;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.EntityGraph;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
@@ -77,5 +78,21 @@ public interface LeaveRequestRepository extends JpaRepository<LeaveRequest, Inte
         @Param("status") LeaveStatus status,
         @Param("deptId") Integer deptId,
         @Param("excludeEmployeeId") Integer excludeEmployeeId
+    );
+
+    @EntityGraph(attributePaths = {"employee", "employee.department", "employee.shift", "employee.location", "leaveType"})
+    @Query("SELECT l FROM LeaveRequest l WHERE l.id = :leaveId")
+    java.util.Optional<LeaveRequest> findDetailedById(@Param("leaveId") Integer leaveId);
+
+    @EntityGraph(attributePaths = {"employee", "employee.location"})
+    @Query("SELECT l FROM LeaveRequest l WHERE l.status = com.coresync.hrms.backend.enums.LeaveStatus.APPROVED " +
+           "AND l.employee.department.id = :deptId AND l.employee.shift.id = :shiftId " +
+           "AND l.employee.role = com.coresync.hrms.backend.enums.EmployeeRole.EMPLOYEE " +
+           "AND l.startDate <= :endDate AND l.endDate >= :startDate")
+    List<LeaveRequest> findApprovedLeavesForDepartmentShiftInRange(
+        @Param("deptId") Integer deptId,
+        @Param("shiftId") Integer shiftId,
+        @Param("startDate") LocalDate startDate,
+        @Param("endDate") LocalDate endDate
     );
 }

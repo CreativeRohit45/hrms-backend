@@ -129,6 +129,24 @@ public class LeaveController {
     //  HR ADMIN ENDPOINTS
     // ═══════════════════════════════════════════════════════════════════
 
+    @GetMapping("/{id}/impact-preview")
+    @PreAuthorize("hasAnyRole('DEPARTMENT_MANAGER', 'HR_ADMIN', 'SUPER_ADMIN')")
+    public ResponseEntity<LeaveImpactPreviewDTO> getImpactPreview(
+            @PathVariable Integer id,
+            Authentication authentication) {
+        Integer requesterId = resolveId(authentication);
+        return ResponseEntity.ok(leaveService.previewLeaveImpact(id, requesterId));
+    }
+
+    @PostMapping("/impact-preview/bulk")
+    @PreAuthorize("hasAnyRole('DEPARTMENT_MANAGER', 'HR_ADMIN', 'SUPER_ADMIN')")
+    public ResponseEntity<List<LeaveImpactPreviewDTO>> getBulkImpactPreview(
+            @Valid @RequestBody LeaveImpactBulkPreviewRequest request,
+            Authentication authentication) {
+        Integer requesterId = resolveId(authentication);
+        return ResponseEntity.ok(leaveService.previewLeaveImpactBulk(request.getLeaveRequestIds(), requesterId));
+    }
+
     @PutMapping("/{id}/revoke")
     public ResponseEntity<LeaveResponse> revokeLeave(
             @PathVariable Integer id,

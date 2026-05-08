@@ -51,6 +51,7 @@ public class ShiftController {
         existing.setOvernight(body.isOvernight());
         existing.setStandardHours(body.getStandardHours());
         existing.setGracePeriodMinutes(body.getGracePeriodMinutes());
+        existing.setMinimumHeadcount(body.getMinimumHeadcount());
         existing.setActive(body.isActive());
 
         Shift saved = shiftRepository.save(existing);

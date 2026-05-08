@@ -8,6 +8,7 @@ import com.coresync.hrms.backend.exception.InsufficientBalanceException;
 import com.coresync.hrms.backend.repository.*;
 import jakarta.persistence.EntityNotFoundException;
 import com.coresync.hrms.backend.enums.EmployeeRole;
+import com.coresync.hrms.backend.enums.EmployeeStatus;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -562,6 +563,37 @@ public class LeaveService {
     // ═══════════════════════════════════════════════════════════════════
 
     @Transactional(readOnly = true)
+    public LeaveImpactPreviewDTO previewLeaveImpact(Integer leaveId, Integer requesterId) {
+        LeaveRequest leave = leaveRequestRepository.findDetailedById(leaveId)
+            .orElseThrow(() -> new EntityNotFoundException("Leave request not found"));
+        Employee requester = findEmployee(requesterId);
+
+        validateImpactPreviewAccess(requester, leave);
+        if (leave.getStatus() != LeaveStatus.PENDING) {
+            throw new IllegalStateException("Impact preview is only available for pending leave requests.");
+        }
+
+        return buildImpactPreview(leave);
+    }
+
+    @Transactional(readOnly = true)
+    public List<LeaveImpactPreviewDTO> previewLeaveImpactBulk(List<Integer> leaveIds, Integer requesterId) {
+        if (leaveIds == null || leaveIds.isEmpty()) {
+            return Collections.emptyList();
+        }
+
+        LinkedHashSet<Integer> uniqueIds = leaveIds.stream()
+            .filter(Objects::nonNull)
+            .collect(Collectors.toCollection(LinkedHashSet::new));
+
+        List<LeaveImpactPreviewDTO> previews = new ArrayList<>();
+        for (Integer leaveId : uniqueIds) {
+            previews.add(previewLeaveImpact(leaveId, requesterId));
+        }
+        return previews;
+    }
+
+    @Transactional(readOnly = true)
     public List<LeaveResponse> getMyLeaves(Integer empId) {
         return leaveRequestRepository.findByEmployeeIdOrderByCreatedAtDesc(empId)
             .stream().map(this::toResponse).toList();
@@ -670,6 +702,159 @@ public class LeaveService {
     // ═══════════════════════════════════════════════════════════════════
     //  6. HELPERS
     // ═══════════════════════════════════════════════════════════════════
+    private LeaveImpactPreviewDTO buildImpactPreview(LeaveRequest leave) {
+        Employee targetEmployee = leave.getEmployee();
+        Shift shift = targetEmployee.getShift();
+
+        if (targetEmployee.getDepartment() == null || shift == null) {
+            throw new IllegalStateException("Cannot calculate coverage preview without department and shift data.");
+        }
+
+        List<LocalDate> effectiveDates = getEffectiveWorkingDates(leave);
+        if (effectiveDates.isEmpty()) {
+            throw new IllegalStateException("No working dates found in this leave request.");
+        }
+
+        int scheduledCount = Math.toIntExact(employeeRepository.countByDepartmentIdAndShiftIdAndStatusAndRole(
+            targetEmployee.getDepartment().getId(),
+            shift.getId(),
+            EmployeeStatus.ACTIVE,
+            EmployeeRole.EMPLOYEE
+        ));
+
+        List<LeaveRequest> approvedLeaves = leaveRequestRepository.findApprovedLeavesForDepartmentShiftInRange(
+            targetEmployee.getDepartment().getId(),
+            shift.getId(),
+            effectiveDates.get(0),
+            effectiveDates.get(effectiveDates.size() - 1)
+        );
+
+        LocalDate worstCaseDate = effectiveDates.get(0);
+        double worstApprovedOffCount = 0.0;
+        double lowestProjectedAvailableCount = Double.MAX_VALUE;
+
+        for (LocalDate date : effectiveDates) {
+            double alreadyApprovedOffCount = approvedLeaves.stream()
+                .mapToDouble(existingLeave -> getLeaveImpactOnDate(existingLeave, date))
+                .sum();
+            double currentRequestImpact = getLeaveImpactOnDate(leave, date);
+            double projectedAvailableCount = roundToSingleDecimal(scheduledCount - alreadyApprovedOffCount - currentRequestImpact);
+
+            if (projectedAvailableCount < lowestProjectedAvailableCount) {
+                lowestProjectedAvailableCount = projectedAvailableCount;
+                worstApprovedOffCount = roundToSingleDecimal(alreadyApprovedOffCount);
+                worstCaseDate = date;
+            }
+        }
+
+        Integer minimumHeadcount = shift.getMinimumHeadcount();
+        boolean configured = minimumHeadcount != null;
+        String severity = resolveSeverity(configured, minimumHeadcount, lowestProjectedAvailableCount);
+
+        return LeaveImpactPreviewDTO.builder()
+            .leaveRequestId(leave.getId())
+            .startDate(leave.getStartDate())
+            .endDate(leave.getEndDate())
+            .worstCaseDate(worstCaseDate)
+            .shiftId(shift.getId())
+            .shiftName(shift.getShiftName())
+            .scheduledCount(scheduledCount)
+            .alreadyApprovedOffCount(worstApprovedOffCount)
+            .projectedAvailableCount(roundToSingleDecimal(lowestProjectedAvailableCount))
+            .minimumHeadcount(minimumHeadcount)
+            .configured(configured)
+            .severity(severity)
+            .message(buildImpactMessage(severity, shift.getShiftName(), worstCaseDate))
+            .build();
+    }
+
+    private void validateImpactPreviewAccess(Employee requester, LeaveRequest leave) {
+        if (requester.getRole() == EmployeeRole.DEPARTMENT_MANAGER) {
+            if (leave.getEmployee().getRole() != EmployeeRole.EMPLOYEE) {
+                throw new IllegalArgumentException("Department managers can only preview employee leave requests.");
+            }
+            if (requester.getDepartment() == null || leave.getEmployee().getDepartment() == null ||
+                !requester.getDepartment().getId().equals(leave.getEmployee().getDepartment().getId())) {
+                throw new IllegalArgumentException("Unauthorized: leave request is outside your department.");
+            }
+            if (leave.getEmployee().getId().equals(requester.getId())) {
+                throw new IllegalArgumentException("Department managers cannot preview their own leave requests here.");
+            }
+            return;
+        }
+
+        if (requester.getRole() == EmployeeRole.HR_ADMIN) {
+            if (leave.getEmployee().getRole() != EmployeeRole.EMPLOYEE) {
+                throw new IllegalArgumentException("HR Admin can only preview employee leave requests.");
+            }
+            return;
+        }
+
+        if (requester.getRole() != EmployeeRole.SUPER_ADMIN) {
+            throw new IllegalArgumentException("Unauthorized: insufficient role for impact preview.");
+        }
+    }
+
+    private List<LocalDate> getEffectiveWorkingDates(LeaveRequest leave) {
+        Employee employee = leave.getEmployee();
+        CompanyLocation location = employee.getLocation();
+        Set<DayOfWeek> weekends = parseWeekendDays(location.getWeekendDays());
+        Set<LocalDate> holidayDates = holidayRepository.findByDateRangeAndLocation(
+                leave.getStartDate(), leave.getEndDate(), location.getId())
+            .stream()
+            .map(Holiday::getHolidayDate)
+            .collect(Collectors.toSet());
+
+        List<LocalDate> dates = new ArrayList<>();
+        for (LocalDate date = leave.getStartDate(); !date.isAfter(leave.getEndDate()); date = date.plusDays(1)) {
+            if (!weekends.contains(date.getDayOfWeek()) && !holidayDates.contains(date)) {
+                dates.add(date);
+            }
+        }
+        return dates;
+    }
+
+    private double getLeaveImpactOnDate(LeaveRequest leave, LocalDate date) {
+        if (date.isBefore(leave.getStartDate()) || date.isAfter(leave.getEndDate())) {
+            return 0.0;
+        }
+
+        if (!getEffectiveWorkingDates(leave).contains(date)) {
+            return 0.0;
+        }
+
+        return leave.isHalfDay() ? 0.5 : 1.0;
+    }
+
+    private String resolveSeverity(boolean configured, Integer minimumHeadcount, double projectedAvailableCount) {
+        if (!configured) {
+            return "UNCONFIGURED";
+        }
+        if (projectedAvailableCount < minimumHeadcount) {
+            return "UNDERSTAFFED";
+        }
+        if (projectedAvailableCount == minimumHeadcount) {
+            return "RISK";
+        }
+        return "SAFE";
+    }
+
+    private String buildImpactMessage(String severity, String shiftName, LocalDate worstCaseDate) {
+        return switch (severity) {
+            case "UNDERSTAFFED" -> String.format(
+                "Approving this leave would leave the %s shift understaffed on %s.", shiftName, worstCaseDate);
+            case "RISK" -> String.format(
+                "Approving this leave would leave the %s shift exactly at the minimum headcount on %s.", shiftName, worstCaseDate);
+            case "UNCONFIGURED" -> "Coverage threshold is not configured for this shift yet.";
+            default -> String.format(
+                "Approving this leave keeps the %s shift above the minimum headcount on %s.", shiftName, worstCaseDate);
+        };
+    }
+
+    private double roundToSingleDecimal(double value) {
+        return Math.round(value * 10.0) / 10.0;
+    }
+
     private void writeAudit(Employee e, LeaveType t, int y, LeaveTransactionType tx, double amt, double after, String res, Integer refId, Integer adminId) {
         auditRepository.save(LeaveBalanceAudit.builder()
             .employee(e).leaveType(t).year(y).transactionType(tx)
