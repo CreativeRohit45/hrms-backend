@@ -82,7 +82,7 @@ public class PayrollCalculationService {
 
         // ── Fetch all closed attendance sessions for the period ──────
         List<AttendanceLog> sessions = attendanceLogRepository
-            .findClosedSessionsForPeriod(employeeId, periodStart, periodEnd);
+            .findSessionsForPeriod(employeeId, periodStart, periodEnd);
         log.info("Payroll calculation for employee {} | Period: {} to {} | Sessions: {}",
             employee.getEmployeeCode(), periodStart, periodEnd, sessions.size());
 
@@ -112,7 +112,6 @@ public class PayrollCalculationService {
 
             switch (session.getAttendanceStatus()) {
                 case PRESENT      -> presentDays++;
-                case LATE         -> { presentDays++; lateDays++; }
                 case ABSENT       -> absentDays++;
                 case ON_LEAVE     -> leaveDays++;
                 case HALF_DAY     -> presentDays++;
@@ -120,6 +119,7 @@ public class PayrollCalculationService {
                 case WEEKEND_WORK -> presentDays++;
                 default           -> {}
             }
+            if (session.isLate()) lateDays++;
         }
 
         int totalPayableMinutes = totalRegularMinutes + totalOvertimeMinutes;

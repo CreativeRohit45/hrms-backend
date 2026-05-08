@@ -63,6 +63,10 @@ public class AttendanceLog {
     @Column(name = "attendance_status", nullable = false, length = 40)
     private AttendanceStatus attendanceStatus;
 
+    @Column(name = "is_late", nullable = false)
+    @Builder.Default
+    private boolean isLate = false;
+
     @Column(name = "is_manually_corrected", nullable = false)
     @Builder.Default
     private boolean isManuallyCorrected = false;

@@ -40,7 +40,7 @@ public class DashboardService {
         LocalDate monthEnd = today.withDayOfMonth(today.lengthOfMonth());
 
         // 1. Attendance for current month
-        List<AttendanceLog> monthlyLogs = attendanceLogRepository.findClosedSessionsForPeriod(employee.getId(), monthStart, monthEnd);
+        List<AttendanceLog> monthlyLogs = attendanceLogRepository.findSessionsForPeriod(employee.getId(), monthStart, monthEnd);
         
         long present = 0;
         long late = 0;
@@ -51,18 +51,12 @@ public class DashboardService {
             present = monthlyLogs.stream()
                 .filter(l -> l.getAttendanceStatus() != null && 
                     (l.getAttendanceStatus().name().equals("PRESENT") || 
-                     l.getAttendanceStatus().name().equals("LATE") ||
                      l.getAttendanceStatus().name().equals("HALF_DAY") ||
                      l.getAttendanceStatus().name().equals("WEEKEND_WORK") ||
                      l.getAttendanceStatus().name().equals("HOLIDAY_WORK")))
                 .count();
             late = monthlyLogs.stream()
-                .filter(l -> l.getAttendanceStatus() != null && (
-                    l.getAttendanceStatus().name().equals("LATE") ||
-                    (l.getAttendanceStatus().name().equals("HALF_DAY") && 
-                     l.getPunchInTime() != null && 
-                     l.getPunchInTime().toLocalTime().isAfter(l.getShift().getStartTime().plusMinutes(10)))
-                ))
+                .filter(AttendanceLog::isLate)
                 .count();
             leaveDays = monthlyLogs.stream()
                 .filter(l -> l.getAttendanceStatus() != null && l.getAttendanceStatus().name().equals("ON_LEAVE"))
@@ -71,7 +65,6 @@ public class DashboardService {
             long total = monthlyLogs.stream()
                 .filter(l -> l.getAttendanceStatus() != null && 
                     (l.getAttendanceStatus().name().equals("PRESENT") || 
-                     l.getAttendanceStatus().name().equals("LATE") ||
                      l.getAttendanceStatus().name().equals("HALF_DAY") ||
                      l.getAttendanceStatus().name().equals("WEEKEND_WORK") ||
                      l.getAttendanceStatus().name().equals("HOLIDAY_WORK")))
@@ -110,7 +103,6 @@ public class DashboardService {
                         .anyMatch(l -> l.getWorkDate().equals(d) && 
                             l.getAttendanceStatus() != null &&
                             (l.getAttendanceStatus().name().equals("PRESENT") || 
-                             l.getAttendanceStatus().name().equals("LATE") ||
                              l.getAttendanceStatus().name().equals("HALF_DAY") ||
                              l.getAttendanceStatus().name().equals("WEEKEND_WORK") ||
                              l.getAttendanceStatus().name().equals("HOLIDAY_WORK")));

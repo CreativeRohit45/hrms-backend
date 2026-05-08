@@ -527,7 +527,6 @@ public class LeaveService {
         List<Integer> presentIds = attendanceLogRepository.findEmployeeIdsWithStatusOnDate(
              deptId, today, List.of(
                  com.coresync.hrms.backend.enums.AttendanceStatus.PRESENT,
-                 com.coresync.hrms.backend.enums.AttendanceStatus.LATE,
                  com.coresync.hrms.backend.enums.AttendanceStatus.HALF_DAY,
                  com.coresync.hrms.backend.enums.AttendanceStatus.WEEKEND_WORK,
                  com.coresync.hrms.backend.enums.AttendanceStatus.HOLIDAY_WORK

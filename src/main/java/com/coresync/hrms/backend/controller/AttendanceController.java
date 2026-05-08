@@ -175,6 +175,7 @@ public class AttendanceController {
             .overtime(log.isOvertime())
             .overtimeMinutes(log.getOvertimeMinutes())
             .attendanceStatus(log.getAttendanceStatus())
+            .late(log.isLate())
             .manuallyCorrected(log.isManuallyCorrected())
             .correctionReason(log.getCorrectionReason())
             .correctionStatus(log.getCorrectionStatus())

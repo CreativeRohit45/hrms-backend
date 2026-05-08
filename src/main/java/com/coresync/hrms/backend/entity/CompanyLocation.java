@@ -30,6 +30,10 @@ public class CompanyLocation {
     @Builder.Default
     private int allowedRadiusMeters = 3000;
 
+    @Column(name = "enforce_geofence", nullable = false)
+    @Builder.Default
+    private boolean enforceGeofence = false;
+
     @Column(name = "is_active", nullable = false)
     @Builder.Default
     private boolean isActive = true;

@@ -20,8 +20,8 @@ public interface AttendanceLogRepository extends JpaRepository<AttendanceLog, Lo
 
     @Query("SELECT a FROM AttendanceLog a WHERE a.employee.id = :employeeId " +
            "AND a.workDate BETWEEN :startDate AND :endDate " +
-           "AND (a.punchOutTime IS NOT NULL OR a.attendanceStatus NOT IN (com.coresync.hrms.backend.enums.AttendanceStatus.PRESENT, com.coresync.hrms.backend.enums.AttendanceStatus.LATE))")
-    List<AttendanceLog> findClosedSessionsForPeriod(
+           "ORDER BY a.workDate DESC, a.id DESC")
+    List<AttendanceLog> findSessionsForPeriod(
         @Param("employeeId") Integer employeeId,
         @Param("startDate")  LocalDate startDate,
         @Param("endDate")    LocalDate endDate

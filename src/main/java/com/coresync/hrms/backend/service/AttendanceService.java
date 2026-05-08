@@ -58,7 +58,13 @@ public class AttendanceService {
         CompanyLocation location = employee.getLocation();
         boolean locationVerified = isWithinGeofence(latitude, longitude, location);
         if (!locationVerified) {
-            log.warn("Punch-IN geofence FAILED for employee ID {} — continuing execution, but with flag=false", employeeId);
+            if (location.isEnforceGeofence()) {
+                throw new LocationVerificationException(
+                    calculateHaversineDistance(latitude, longitude,
+                        location.getLatitude().doubleValue(), location.getLongitude().doubleValue()),
+                    location.getAllowedRadiusMeters());
+            }
+            log.warn("Punch-IN geofence FAILED for employee ID {} — allowed (enforce=false), flagging as unverified", employeeId);
         }
 
         LocalDateTime now = LocalDateTime.now();
@@ -103,6 +109,7 @@ public class AttendanceService {
         }
 
         AttendanceStatus status = resolveAttendanceStatus(employee, now);
+        boolean late = isLateArrival(employee, now);
 
         AttendanceLog logEntity = AttendanceLog.builder()
             .employee(employee)
@@ -110,12 +117,13 @@ public class AttendanceService {
             .location(location)
             .punchInTime(now)
             .punchOutTime(null)
-            .isLocationVerifiedIn(true)
+            .isLocationVerifiedIn(locationVerified)
             .isLocationVerifiedOut(null)
             .calculatedPayableMinutes(null)
             .isOvertime(false)
             .overtimeMinutes(0)
             .attendanceStatus(status)
+            .isLate(late)
             .workDate(todayIst)
             .isManuallyCorrected(false)
             .correctionReason(null)
@@ -141,7 +149,13 @@ public class AttendanceService {
         boolean locationVerified = isWithinGeofence(latitude, longitude, location);
 
         if (!locationVerified) {
-            log.warn("Punch-OUT geofence FAILED for employee ID {} — recording with flag=false", employeeId);
+            if (location.isEnforceGeofence()) {
+                throw new LocationVerificationException(
+                    calculateHaversineDistance(latitude, longitude,
+                        location.getLatitude().doubleValue(), location.getLongitude().doubleValue()),
+                    location.getAllowedRadiusMeters());
+            }
+            log.warn("Punch-OUT geofence FAILED for employee ID {} — allowed (enforce=false), flagging as unverified", employeeId);
         }
 
         LocalDateTime now = LocalDateTime.now();
@@ -371,7 +385,7 @@ public class AttendanceService {
     }
 
     public List<AttendanceLog> getLogs(Integer employeeId, LocalDate startDate, LocalDate endDate) {
-        List<AttendanceLog> logs = attendanceLogRepository.findClosedSessionsForPeriod(employeeId, startDate, endDate);
+        List<AttendanceLog> logs = attendanceLogRepository.findSessionsForPeriod(employeeId, startDate, endDate);
         for (AttendanceLog logEntity : logs) {
             autoHealLog(logEntity);
         }
@@ -448,11 +462,16 @@ public class AttendanceService {
     private void autoHealLog(AttendanceLog logEntity) {
         boolean changed = false;
 
-        // 1. Fix Status for Approved Corrections (if stuck in LATE)
-        if (logEntity.getCorrectionStatus() == CorrectionStatus.APPROVED && logEntity.getAttendanceStatus() == AttendanceStatus.LATE) {
+        // 1. Fix Status for Approved Corrections — recalculate status and isLate
+        if (logEntity.getCorrectionStatus() == CorrectionStatus.APPROVED) {
             AttendanceStatus newStatus = resolveAttendanceStatus(logEntity.getEmployee(), logEntity.getPunchInTime());
+            boolean newLate = isLateArrival(logEntity.getEmployee(), logEntity.getPunchInTime());
             if (newStatus != logEntity.getAttendanceStatus()) {
                 logEntity.setAttendanceStatus(newStatus);
+                changed = true;
+            }
+            if (newLate != logEntity.isLate()) {
+                logEntity.setLate(newLate);
                 changed = true;
             }
         }
@@ -535,13 +554,27 @@ public class AttendanceService {
             return AttendanceStatus.WEEKEND_WORK;
         }
 
-        LocalDateTime shiftStart = date.atTime(employee.getShift().getStartTime());
-        // Always enforce a 10-minute grace period from the specific employee's shift start
-        LocalDateTime lateThreshold = shiftStart.plusMinutes(10);
+        return AttendanceStatus.PRESENT;
+    }
 
-        return punchTime.isAfter(lateThreshold)
-            ? AttendanceStatus.LATE
-            : AttendanceStatus.PRESENT;
+    /**
+     * Determines if the employee arrived late (> 10 min grace period after shift start).
+     * This is independent of attendance status — a PRESENT employee can also be late.
+     */
+    private boolean isLateArrival(Employee employee, LocalDateTime punchTime) {
+        LocalDate date = punchTime.toLocalDate();
+
+        // No "Late" check for holidays or weekends
+        boolean isHoliday = holidayRepository.existsByHolidayDate(date);
+        if (isHoliday) return false;
+
+        String dayName = date.getDayOfWeek().name().toUpperCase();
+        boolean isWeekend = employee.getLocation().getWeekendDays().toUpperCase().contains(dayName);
+        if (isWeekend) return false;
+
+        LocalDateTime shiftStart = date.atTime(employee.getShift().getStartTime());
+        LocalDateTime lateThreshold = shiftStart.plusMinutes(10);
+        return punchTime.isAfter(lateThreshold);
     }
     
     @Transactional
@@ -617,7 +650,9 @@ public class AttendanceService {
         logEntity.setOvertimeMinutes(otMinutes);
         if(isOvertime) logEntity.setIsOvertimeApproved(false);
 
-        // 4. Recalculate Attendance Status (Including Half-Day Check)
+        // 4. Recalculate Attendance Status (Including Half-Day Check) & Late flag
+        boolean correctedLate = isLateArrival(logEntity.getEmployee(), logEntity.getPunchInTime());
+        logEntity.setLate(correctedLate);
         if (payableMinutes < (standardMinutes / 2.0)) {
             logEntity.setAttendanceStatus(AttendanceStatus.HALF_DAY);
         } else {
@@ -718,12 +753,23 @@ public class AttendanceService {
         // Apply auto-healing to the results in the page
         rosterPage.forEach(this::autoHealLog);
 
-        if (status != null && !status.isBlank()) {
-            AttendanceStatus requestedStatus = AttendanceStatus.valueOf(status);
-            List<AttendanceLog> filtered = rosterPage.getContent().stream()
-                .filter(log -> log.getAttendanceStatus() == requestedStatus)
-                .toList();
-            return new PageImpl<>(filtered, pageable, filtered.size());
+        if (status != null && !status.isBlank() && !status.equalsIgnoreCase("ALL")) {
+            if (status.equalsIgnoreCase("LATE")) {
+                List<AttendanceLog> filtered = rosterPage.getContent().stream()
+                    .filter(log -> log.isLate())
+                    .toList();
+                return new PageImpl<>(filtered, pageable, filtered.size());
+            } else {
+                try {
+                    AttendanceStatus requestedStatus = AttendanceStatus.valueOf(status);
+                    List<AttendanceLog> filtered = rosterPage.getContent().stream()
+                        .filter(log -> log.getAttendanceStatus() == requestedStatus)
+                        .toList();
+                    return new PageImpl<>(filtered, pageable, filtered.size());
+                } catch (IllegalArgumentException e) {
+                    // Fallback or ignore invalid status
+                }
+            }
         }
         
         return rosterPage;

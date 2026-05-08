@@ -26,6 +26,7 @@ public class AttendanceLogResponse {
     private boolean overtime;
     private int overtimeMinutes;
     private AttendanceStatus attendanceStatus;
+    private boolean late;
     private boolean manuallyCorrected;
     private String correctionReason;
     private CorrectionStatus correctionStatus;
