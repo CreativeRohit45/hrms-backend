@@ -4,6 +4,7 @@ import jakarta.persistence.*;
 import lombok.*;
 import java.time.LocalDateTime;
 
+
 @Entity
 @Table(name = "leave_types", indexes = {
     @Index(name = "idx_leave_type_code", columnList = "code", unique = true)
@@ -20,6 +21,11 @@ public class LeaveType {
 
     @Column(nullable = false, unique = true, length = 10)
     private String code;
+
+    @Enumerated(EnumType.STRING)
+    @Column(name = "unit", nullable = false, length = 10)
+    @Builder.Default
+    private LeaveUnit unit = LeaveUnit.DAYS;
 
     @Column(name = "is_paid", nullable = false)
     @Builder.Default

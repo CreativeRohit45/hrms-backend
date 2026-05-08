@@ -234,8 +234,21 @@ public class LeaveController {
     // ═══════════════════════════════════════════════════════════════════
 
     @GetMapping("/types")
-    public ResponseEntity<List<LeaveType>> getLeaveTypes() {
-        return ResponseEntity.ok(leaveService.getActiveLeaveTypes());
+    public ResponseEntity<List<LeaveType>> getLeaveTypes(Authentication authentication) {
+        Integer employeeId = resolveId(authentication);
+        Employee employee = employeeRepository.findById(employeeId).orElseThrow();
+        List<LeaveType> types = leaveService.getActiveLeaveTypes();
+        
+        List<LeaveType> filtered = types.stream()
+            .filter(type -> {
+                if (type.getAllowedGenders() != null && !type.getAllowedGenders().isBlank()) {
+                    return employee.getGender() == null || type.getAllowedGenders().toUpperCase().contains(employee.getGender().toUpperCase());
+                }
+                return true;
+            })
+            .toList();
+            
+        return ResponseEntity.ok(filtered);
     }
 
     // ═══════════════════════════════════════════════════════════════════

@@ -9,6 +9,7 @@ public class LeaveBalanceResponse {
     private Integer leaveTypeId;
     private String leaveTypeName;
     private String leaveTypeCode;
+    private String unit; // DAYS or HOURS
     private double allocated;
     private double used;
     private double balance;

@@ -116,18 +116,23 @@ public class LeaveService {
             throw new IllegalArgumentException("Cannot apply for Leave on dates that have existing Gatepass requests.");
         }
 
-        // --- Date Math: Calculate Actual Leave Days ---
-        double appliedDays;
-        if (request.isHalfDay()) {
-            appliedDays = 0.5;
+        // --- Date Math: Calculate Actual Leave Days or Hours ---
+        double appliedDuration;
+        if (leaveType.getUnit() == LeaveUnit.HOURS) {
+            if (request.getAppliedHours() == null || request.getAppliedHours() <= 0) {
+                throw new IllegalArgumentException("Hours requested is required for '" + leaveType.getName() + "'.");
+            }
+            appliedDuration = request.getAppliedHours();
+        } else if (request.isHalfDay()) {
+            appliedDuration = 0.5;
         } else {
-            appliedDays = calculateActualLeaveDays(
+            appliedDuration = calculateActualLeaveDays(
                 request.getStartDate(), request.getEndDate(), employee);
         }
 
-        if (appliedDays <= 0) {
+        if (appliedDuration <= 0) {
             throw new IllegalArgumentException(
-                "No working days found in the selected date range (all dates are holidays or weekends).");
+                "No valid leave duration found (check date range or requested hours).");
         }
 
         // --- Balance Check & Escrow ---
@@ -138,24 +143,25 @@ public class LeaveService {
                 .orElse(null);
 
             if (balance == null) {
-                throw new InsufficientBalanceException(0, appliedDays, leaveType.getCode());
+                throw new InsufficientBalanceException(0, appliedDuration, leaveType.getCode());
             }
 
-            if (!leaveType.isAllowNegativeBalance() && balance.getBalance() < appliedDays) {
-                throw new InsufficientBalanceException(balance.getBalance(), appliedDays, leaveType.getCode());
+            if (!leaveType.isAllowNegativeBalance() && balance.getBalance() < appliedDuration) {
+                throw new InsufficientBalanceException(balance.getBalance(), appliedDuration, leaveType.getCode());
             }
 
             // ESCROW DEDUCT
-            balance.deduct(appliedDays);
+            balance.deduct(appliedDuration);
             leaveBalanceRepository.save(balance);
 
             writeAudit(employee, leaveType, year, LeaveTransactionType.DEDUCTION,
-                -appliedDays, balance.getBalance(),
-                "Leave applied: " + request.getStartDate() + " to " + request.getEndDate(),
+                -appliedDuration, balance.getBalance(),
+                "Leave applied: " + request.getStartDate() + " to " + request.getEndDate() + 
+                (leaveType.getUnit() == LeaveUnit.HOURS ? " (" + appliedDuration + "h)" : ""),
                 null, null);
 
-            log.info("[LeaveService] ESCROW DEDUCTED | Employee: {} | Type: {} | Days: {} | Remaining: {}",
-                employee.getEmployeeCode(), leaveType.getCode(), appliedDays, balance.getBalance());
+            log.info("[LeaveService] ESCROW DEDUCTED | Employee: {} | Type: {} | Duration: {} | Unit: {} | Remaining: {}",
+                employee.getEmployeeCode(), leaveType.getCode(), appliedDuration, leaveType.getUnit(), balance.getBalance());
         }
 
         // --- Build & Save Leave Request ---
@@ -164,7 +170,7 @@ public class LeaveService {
             .leaveType(leaveType)
             .startDate(request.getStartDate())
             .endDate(request.getEndDate())
-            .appliedDays(appliedDays)
+            .appliedDays(appliedDuration) // Reusing column for hours if unit is HOURS
             .reason(request.getReason())
             .status(LeaveStatus.PENDING)
             .isHalfDay(request.isHalfDay())
@@ -292,17 +298,25 @@ public class LeaveService {
 
         boolean isAdmin = requester.getRole() == EmployeeRole.HR_ADMIN || requester.getRole() == EmployeeRole.SUPER_ADMIN;
         boolean isOwner = leave.getEmployee().getId().equals(requesterId);
+        
+        // Managers can revoke leaves for their department
+        boolean isManager = requester.getRole() == EmployeeRole.DEPARTMENT_MANAGER && 
+                           requester.getDepartment() != null && 
+                           leave.getEmployee().getDepartment() != null &&
+                           requester.getDepartment().getId().equals(leave.getEmployee().getDepartment().getId());
 
-        if (!isAdmin && !isOwner) {
-            throw new IllegalArgumentException("Unauthorized: You can only revoke your own leave or be an Admin.");
+        if (!isAdmin && !isOwner && !isManager) {
+            throw new IllegalArgumentException("Unauthorized: You can only revoke your own leave, be an Admin, or be their Manager.");
         }
 
-        // --- Trap 1 Fix: The Time-Machine Guard ---
-        if (!isAdmin && leave.getStartDate().isBefore(LocalDate.now())) {
-            throw new IllegalStateException("Employees cannot revoke leaves that have already started or occurred. Contact HR.");
+        // --- The Time-Machine Guard ---
+        // Leave requests can only be revoked before they start. Once a leave has started
+        // or is in the past, it cannot be revoked through this automated workflow.
+        if (!leave.getStartDate().isAfter(LocalDate.now())) {
+            throw new IllegalStateException("You cannot revoke leave requests that have already started. Please contact HR.");
         }
 
-        refundBalance(leave, "Leave REVOKED by " + (isAdmin ? "Admin" : "Employee") + ": " + reason);
+        refundBalance(leave, "Leave REVOKED by " + (isAdmin ? "Admin" : (isManager ? "Manager" : "Employee")) + ": " + reason);
         leave.setStatus(LeaveStatus.REVOKED);
         leave.setActionByUserId(requesterId);
         leave.setActionAt(LocalDateTime.now());
@@ -624,8 +638,70 @@ public class LeaveService {
     @Transactional(readOnly = true)
     public List<LeaveBalanceResponse> getEmployeeBalances(Integer empId) {
         int year = LocalDate.now().getYear();
-        return leaveBalanceRepository.findByEmployeeIdAndYear(empId, year)
-            .stream().map(this::toBalanceResponse).toList();
+        Employee employee = findEmployee(empId);
+        List<LeaveType> activeTypes = leaveTypeRepository.findByIsActiveTrue();
+        List<LeaveBalance> existingBalances = leaveBalanceRepository.findByEmployeeIdAndYear(empId, year);
+        
+        Map<Integer, LeaveBalance> balanceMap = existingBalances.stream()
+            .collect(Collectors.toMap(b -> b.getLeaveType().getId(), b -> b));
+
+        return activeTypes.stream()
+            .filter(type -> {
+                // Hide LWP
+                if ("LWP".equals(type.getCode())) return false;
+                
+                // Gender eligibility check
+                if (type.getAllowedGenders() != null && !type.getAllowedGenders().isBlank()) {
+                    return employee.getGender() == null || type.getAllowedGenders().toUpperCase().contains(employee.getGender().toUpperCase());
+                }
+                return true;
+            })
+            .map(type -> {
+                LeaveBalance bal = balanceMap.get(type.getId());
+                if (bal != null) {
+                    return toBalanceResponse(bal);
+                } else {
+                    // Return a virtual zero-balance for types the employee doesn't have records for yet
+                    return LeaveBalanceResponse.builder()
+                        .leaveTypeId(type.getId())
+                        .leaveTypeName(type.getName())
+                        .leaveTypeCode(type.getCode())
+                        .unit(type.getUnit().name())
+                        .allocated(0.0)
+                        .used(0.0)
+                        .balance(0.0)
+                        .year(year)
+                        .build();
+                }
+            })
+            .collect(Collectors.toList());
+    }
+
+    @Transactional
+    public void creditOvertimeAsCompOff(Integer employeeId, int overtimeMinutes) {
+        if (overtimeMinutes <= 0) return;
+
+        double overtimeHours = Math.round((overtimeMinutes / 60.0) * 10.0) / 10.0;
+        if (overtimeHours <= 0) return;
+
+        Employee employee = findEmployee(employeeId);
+        LeaveType cmpType = leaveTypeRepository.findByCode("CMP")
+            .orElseThrow(() -> new EntityNotFoundException("CMP Leave Type not found in system settings."));
+
+        int year = LocalDate.now().getYear();
+        LeaveBalance balance = leaveBalanceRepository.findForUpdate(employeeId, cmpType.getId(), year)
+            .orElseGet(() -> createEmptyBalance(employee, cmpType, year));
+
+        balance.credit(overtimeHours);
+        leaveBalanceRepository.save(balance);
+
+        writeAudit(employee, cmpType, year, LeaveTransactionType.ACCRUAL,
+            overtimeHours, balance.getBalance(),
+            "Automatic Overtime Accrual: " + overtimeMinutes + " minutes",
+            null, null);
+
+        log.info("[LeaveService] OT ACCRUED to CMP | Employee: {} | Mins: {} | Hours: {} | New Bal: {}",
+            employee.getEmployeeCode(), overtimeMinutes, overtimeHours, balance.getBalance());
     }
 
     @Transactional(readOnly = true)
@@ -646,9 +722,14 @@ public class LeaveService {
         Employee emp = findEmployee(empId);
         LeaveType type = leaveTypeRepository.findById(request.getLeaveTypeId()).orElseThrow();
         
-        double days = request.isHalfDay() ? 0.5 : calculateActualLeaveDays(request.getStartDate(), request.getEndDate(), emp);
+        double amount;
+        if (type.getUnit() == LeaveUnit.HOURS) {
+            amount = request.getAppliedHours() != null ? request.getAppliedHours() : 0.0;
+        } else {
+            amount = request.isHalfDay() ? 0.5 : calculateActualLeaveDays(request.getStartDate(), request.getEndDate(), emp);
+        }
         
-        if (days <= 0) warnings.add("No working days in range");
+        if (amount <= 0 && type.getUnit() != LeaveUnit.HOURS) warnings.add("No working days in range");
         
         double currentBal = 0;
         double balAfter = 0;
@@ -656,7 +737,7 @@ public class LeaveService {
             LeaveBalance bal = leaveBalanceRepository.findByEmployeeIdAndLeaveTypeIdAndYear(empId, type.getId(), request.getStartDate().getYear()).orElse(null);
             if (bal != null) {
                 currentBal = bal.getBalance();
-                balAfter = currentBal - days;
+                balAfter = currentBal - amount;
                 if (!type.isAllowNegativeBalance() && balAfter < 0) warnings.add("Insufficient balance");
             } else {
                 warnings.add("No balance allocated");
@@ -664,7 +745,7 @@ public class LeaveService {
         }
 
         return LeavePreviewResponse.builder()
-            .appliedDays(days)
+            .appliedDays(amount)
             .leaveTypeName(type.getName())
             .currentBalance(currentBal)
             .balanceAfterDeduction(balAfter)
@@ -929,6 +1010,7 @@ public class LeaveService {
     private LeaveBalanceResponse toBalanceResponse(LeaveBalance lb) {
         return LeaveBalanceResponse.builder().leaveTypeId(lb.getLeaveType().getId())
             .leaveTypeName(lb.getLeaveType().getName()).leaveTypeCode(lb.getLeaveType().getCode())
+            .unit(lb.getLeaveType().getUnit().name())
             .allocated(lb.getAllocated()).used(lb.getUsed()).balance(lb.getBalance()).year(lb.getYear()).build();
     }
 

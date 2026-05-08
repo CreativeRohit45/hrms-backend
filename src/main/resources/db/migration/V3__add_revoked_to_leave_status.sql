@@ -1,0 +1,3 @@
+-- V3: Add REVOKED to LeaveStatus enum
+ALTER TABLE leave_requests 
+MODIFY COLUMN status ENUM('PENDING', 'APPROVED', 'REJECTED', 'CANCELLED', 'REVOKED') NOT NULL;

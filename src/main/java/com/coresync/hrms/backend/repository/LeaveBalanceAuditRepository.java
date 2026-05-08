@@ -9,7 +9,8 @@ import java.util.List;
 
 public interface LeaveBalanceAuditRepository extends JpaRepository<LeaveBalanceAudit, Long> {
 
-    Page<LeaveBalanceAudit> findByEmployeeIdAndYearOrderByCreatedAtDesc(Integer empId, int year, Pageable pageable);
+    @org.springframework.data.jpa.repository.Query("SELECT a FROM LeaveBalanceAudit a WHERE a.employee.id = :empId AND a.year = :year AND a.leaveType.code <> 'LWP' ORDER BY a.createdAt DESC")
+    Page<LeaveBalanceAudit> findByEmployeeIdAndYearOrderByCreatedAtDesc(@org.springframework.data.repository.query.Param("empId") Integer empId, @org.springframework.data.repository.query.Param("year") int year, Pageable pageable);
 
     Page<LeaveBalanceAudit> findByEmployeeIdAndLeaveTypeIdAndYearOrderByCreatedAtDesc(
         Integer empId, Integer typeId, int year, Pageable pageable

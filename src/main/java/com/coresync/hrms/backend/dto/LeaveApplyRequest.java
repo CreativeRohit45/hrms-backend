@@ -27,4 +27,7 @@ public class LeaveApplyRequest {
 
     @Size(max = 500)
     private String attachmentUrl;
+
+    /** Required for HOUR-based leave types (e.g. CMP) */
+    private Double appliedHours;
 }
