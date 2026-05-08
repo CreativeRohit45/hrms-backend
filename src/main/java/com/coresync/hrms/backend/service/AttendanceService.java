@@ -111,6 +111,14 @@ public class AttendanceService {
                 + "Use a gate pass for temporary exits.");
         }
 
+        // Guard: Block if on approved leave
+        boolean isOnApprovedLeave = leaveRequestRepository.existsApprovedLeaveOnDate(employee.getId(), todayIst);
+        if (isOnApprovedLeave) {
+            log.warn("Punch-in BLOCKED for employee {}: approved leave exists for {}",
+                employee.getEmployeeCode(), todayIst);
+            throw new IllegalStateException("You are on approved leave today. Punch-in is not allowed.");
+        }
+
         AttendanceStatus status = resolveAttendanceStatus(employee, now);
         boolean late = isLateArrival(employee, now);
 
